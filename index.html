@@ -35,10 +35,8 @@
     </div>
   </div>
 
-  <!-- r147 com objetos globais (THREE.*) -->
+  <!-- Three r147 (global THREE.*) -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/FontLoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/geometries/TextGeometry.js"></script>
 
   <script>
   (() => {
@@ -59,31 +57,29 @@
     let progress = 0;
     let baseSpeed = 0.05;
     let gameOverFlag = false;
-    let gameReady = false; // só fica true depois do “Equilibre-se”
+    let gameReady = false; // só começa após o "Equilibre-se"
 
-    // controle de câmera
-    let yaw = 0;
-    let pitch = 0;
+    // câmera
+    let yaw = 0, pitch = 0;
     let sensitivity = 0.002;
     let pointerLocked = false;
 
-    // calibração automática (média inicial)
-    let calibrationSamples = [];
-    let calibrationDone = false;
+    // calibração (média inicial do pitch)
+    let calibrationSamples = [], calibrationDone = false;
     let pitchOffset = 0;
 
-    // Texto 3D
+    // UI 3D
     let countdownMesh;
-    let font;
+    const clickableObjects = [];
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
 
     playBtn.onclick = start;
 
     function start() {
-      // fade-out overlay
       overlay.style.opacity = 0;
       setTimeout(() => overlay.hidden = true, 1000);
 
-      // fullscreen mobile
       if (document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(()=>{});
       }
@@ -100,6 +96,7 @@
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
+      // renderer.outputEncoding = THREE.sRGBEncoding; // opcional
       document.body.appendChild(renderer.domElement);
 
       const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
@@ -140,21 +137,10 @@
         }
       });
 
-      // Carrega fonte para o texto 3D (mesma versão do three)
-      const loader = new THREE.FontLoader();
-      loader.load(
-        "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/fonts/helvetiker_regular.typeface.json",
-        f => { font = f; },
-        undefined,
-        err => { console.warn('Falha ao carregar fonte:', err); }
-      );
-
-      // Giroscópio com média inicial
+      // Giroscópio
       window.addEventListener('deviceorientation', (e) => {
         const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-        let gamma = e.gamma || 0;
-        let beta = e.beta || 0;
-        let alpha = e.alpha || 0;
+        let gamma = e.gamma || 0, beta = e.beta || 0, alpha = e.alpha || 0;
 
         let currentPitch = Math.abs(orientation) === 90
           ? THREE.MathUtils.degToRad(gamma) * 0.5
@@ -181,27 +167,105 @@
         }
       });
 
-      // Em iOS, solicitar permissão para giroscópio após gesto
+      // iOS: pedir permissão após gesto
       renderer.domElement.addEventListener('click', async () => {
         const D = window.DeviceOrientationEvent;
         if (D && typeof D.requestPermission === 'function') {
           try { await D.requestPermission(); } catch {}
         }
       });
+
+      // Raycast clique/toque
+      window.addEventListener('mousedown', onClick);
+      window.addEventListener('touchstart', (e) => {
+        if(e.touches.length>0){
+          onClick({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+        }
+      });
     }
 
-    function createCountdownText(text) {
-      if (!font) return;
-      if (countdownMesh) scene.remove(countdownMesh);
+    // --------- Texto via Canvas (suporta acentos) ----------
+    function createTextPlane(text, {
+      font = '700 96px system-ui',
+      fill = '#ffffff',
+      stroke = '#000000',
+      strokeWidth = 8,
+      padding = 32,
+      maxWidth = null,
+      align = 'center',
+      worldHeight = 1.2   // altura do plano em unidades do mundo
+    } = {}) {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
 
-      const geometry = new THREE.TextGeometry(text, {
-        font: font,
-        size: 0.8,
-        height: 0.1
+      // Medidas de texto
+      ctx.font = font;
+      ctx.textAlign = align;
+      ctx.textBaseline = 'middle';
+
+      const lines = String(text).split('\n');
+      const lineHeight = 110; // px, ajuste fino para a fonte escolhida
+
+      // mede a largura máxima
+      let maxLineWidth = 0;
+      for (const line of lines) {
+        const w = ctx.measureText(line).width;
+        if (w > maxLineWidth) maxLineWidth = w;
+      }
+
+      const textW = Math.ceil(maxLineWidth) + padding * 2;
+      const textH = Math.ceil(lines.length * lineHeight) + padding * 2;
+
+      canvas.width  = Math.ceil(textW * dpr);
+      canvas.height = Math.ceil(textH * dpr);
+
+      ctx.scale(dpr, dpr);
+      ctx.font = font;
+      ctx.textAlign = align;
+      ctx.textBaseline = 'middle';
+
+      // fundo transparente; contorno + preenchimento
+      const centerX = align === 'center' ? canvas.width / (2*dpr) : padding;
+      const startY = padding + lineHeight/2;
+
+      for (let i = 0; i < lines.length; i++) {
+        const y = startY + i * lineHeight;
+        if (strokeWidth > 0) {
+          ctx.lineWidth = strokeWidth;
+          ctx.strokeStyle = stroke;
+          ctx.strokeText(lines[i], centerX, y);
+        }
+        ctx.fillStyle = fill;
+        ctx.fillText(lines[i], centerX, y);
+      }
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      // tex.encoding = THREE.sRGBEncoding; // opcional
+
+      const aspect = canvas.width / canvas.height;
+      const worldWidth = worldHeight * aspect;
+
+      const geo = new THREE.PlaneGeometry(worldWidth, worldHeight);
+      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+      const mesh = new THREE.Mesh(geo, mat);
+      return mesh;
+    }
+    // ------------------------------------------------------
+
+    // Contador
+    function createCountdownText(text) {
+      if (countdownMesh) scene.remove(countdownMesh);
+      countdownMesh = createTextPlane(text, {
+        font: '700 96px system-ui',
+        fill: '#ffffff',
+        stroke: '#000000',
+        strokeWidth: 10,
+        worldHeight: 1.2
       });
-      const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
-      countdownMesh = new THREE.Mesh(geometry, material);
-      countdownMesh.position.set(0, 2, -5); // texto na frente
+      countdownMesh.position.set(0, 2, -3); // no mundo, à frente do spawn
       scene.add(countdownMesh);
     }
 
@@ -210,14 +274,70 @@
       setTimeout(() => createCountdownText("2"), 2000);
       setTimeout(() => createCountdownText("1"), 3000);
       setTimeout(() => createCountdownText("Equilibre-se"), 4000);
-      setTimeout(() => { 
+      setTimeout(() => {
         if (countdownMesh) scene.remove(countdownMesh);
-        gameReady = true; 
+        gameReady = true;
       }, 5000);
     }
 
+    // Fim de jogo (cria na frente da câmera)
+    function showGameOverText(win) {
+      // sair do pointer lock pra permitir clique
+      if (document.exitPointerLock) document.exitPointerLock();
+
+      const msg = win ? "Você conseguiu!" : "Você caiu!";
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      const basePos = camera.position.clone().add(dir.multiplyScalar(5));
+
+      // título
+      const titleMesh = createTextPlane(msg, {
+        font: '800 88px system-ui',
+        fill: win ? '#00ff88' : '#ff4444',
+        stroke: '#000000',
+        strokeWidth: 10,
+        worldHeight: 1.2
+      });
+      titleMesh.position.copy(basePos);
+      titleMesh.position.y += 1; // um pouco acima
+      scene.add(titleMesh);
+
+      // botão
+      const btnMesh = createTextPlane("Recomeçar", {
+        font: '700 72px system-ui',
+        fill: '#ffffff',
+        stroke: '#000000',
+        strokeWidth: 8,
+        worldHeight: 0.9
+      });
+      btnMesh.position.copy(basePos);
+      btnMesh.position.y -= 0.2;
+      scene.add(btnMesh);
+
+      // marca para raycast
+      btnMesh.userData.isRestart = true;
+      clickableObjects.length = 0;
+      clickableObjects.push(btnMesh);
+    }
+
+    function onClick(event) {
+      // se ainda no jogo e com pointer lock, não fazemos raycast de UI
+      if (!gameOverFlag && pointerLocked) return;
+
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(clickableObjects, true);
+      if (intersects.length > 0) {
+        const obj = intersects[0].object;
+        if (obj.userData.isRestart) {
+          location.reload();
+        }
+      }
+    }
+
     function update(dt) {
-      if (!gameReady) {
+      if (!gameReady || gameOverFlag) {
         camera.rotation.set(pitch, yaw, angle);
         return;
       }
@@ -250,7 +370,6 @@
 
     let last = performance.now();
     function animate() {
-      if (gameOverFlag) return;
       requestAnimationFrame(animate);
       const now = performance.now();
       const dt = Math.min(0.05, (now - last) / 1000);
@@ -262,13 +381,18 @@
 
     function gameOver(win) {
       gameOverFlag = true;
-      overlay.hidden = false;
-      document.getElementById('panel').innerHTML = win
-        ? '<h1>Você conseguiu!</h1><p>Chegou ao fim da corda.</p><button onclick="location.reload()">Recomeçar</button>'
-        : '<h1>Você caiu!</h1><p>Perdeu o equilíbrio e caiu na lava.</p><button onclick="location.reload()">Recomeçar</button>';
+      showGameOverText(win);
     }
+
+    // eventos finais
+    window.addEventListener('mousedown', onClick);
+    window.addEventListener('touchstart', (e) => {
+      if(e.touches.length>0){
+        onClick({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+      }
+    });
+
   })();
   </script>
 </body>
 </html>
-

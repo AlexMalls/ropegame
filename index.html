@@ -96,9 +96,10 @@
       addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
       addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
+      // Invertendo giroscópio
       window.addEventListener('deviceorientation', (e) => {
         if (e.gamma) {
-          angle += e.gamma * 0.0005;
+          angle -= e.gamma * 0.0005;
         }
       });
     }
@@ -112,8 +113,8 @@
       drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
 
       let control = 0;
-      if (keys.a) control += 1;
-      if (keys.d) control -= 1;
+      if (keys.a) control -= 1; // invertido
+      if (keys.d) control += 1; // invertido
 
       angVel += (drift * 0.5 + control * baseControlPower) * dt;
       angVel *= Math.pow(damping, dt * 60);

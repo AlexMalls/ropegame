@@ -146,7 +146,7 @@
       postScene = new THREE.Scene();
       postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-      const quadGeo = new THREE.PlaneGeometry(1, 2); // cobrimos verticalmente; ajustamos por posição/escala
+      const quadGeo = new THREE.PlaneGeometry(1, 1); // cobrimos verticalmente; ajustamos por posição/escala
 
       const lensShader = {
         uniforms: {
@@ -199,9 +199,10 @@
       // posiciona quads: cada um ocupa meia tela em NDC
       // Escala no X para ocupar metade; posiciona X no centro da metade
       leftQuad.position.set(-0.5, 0.0, 0.0);
-      rightQuad.position.set( 0.5, 0.0, 0.0);
-      leftQuad.scale.set(0.5, 1.0, 1.0);
-      rightQuad.scale.set(0.5, 1.0, 1.0);
+      rightQuad.position.set(0.5, 0.0, 0.0);
+
+      leftQuad.scale.set(0.8, 1.5, 1.0);
+      rightQuad.scale.set(0.8, 1.5, 1.0);
 
       postScene.add(leftQuad);
       postScene.add(rightQuad);

@@ -52,7 +52,7 @@
     const statusEl = document.getElementById('status');
 
     let progress = 0;
-    let baseSpeed = 0.1;
+    let baseSpeed = 0.05; // mais devagar -> mais tempo de jogo
     let gameOverFlag = false;
 
     playBtn.onclick = start;
@@ -96,11 +96,18 @@
       addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
       addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
-      // Invertendo giroscópio
+      // Giroscópio com detecção automática de orientação
       window.addEventListener('deviceorientation', (e) => {
-        if (e.gamma) {
-          angle -= e.gamma * 0.0005;
+        const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+        let tilt = 0;
+        if (Math.abs(orientation) === 90) {
+          // Landscape -> usa beta
+          tilt = e.beta || 0;
+        } else {
+          // Portrait -> usa gamma
+          tilt = e.gamma || 0;
         }
+        angle -= tilt * 0.0005; // invertido para ficar natural
       });
     }
 

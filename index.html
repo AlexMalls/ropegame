@@ -13,8 +13,9 @@
     .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; }
     #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; }
     #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; }
-    button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    button { margin: 8px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
+    #calibrateBtn { position: fixed; top: 10px; right: 10px; padding: 8px 14px; background: #444; color: #fff; border: 1px solid #666; border-radius: 6px; cursor: pointer; z-index: 20; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -32,8 +33,11 @@
       O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.<br>
       Agora você também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
       <button id="play">Jogar</button>
+      <button id="config">Configurar</button>
     </div>
   </div>
+
+  <button id="calibrateBtn" hidden>Calibrar</button>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
@@ -49,25 +53,52 @@
 
     const overlay = document.getElementById('overlay');
     const playBtn = document.getElementById('play');
+    const configBtn = document.getElementById('config');
+    const calibrateBtn = document.getElementById('calibrateBtn');
     const fillEl = document.getElementById('fill');
     const statusEl = document.getElementById('status');
 
     let progress = 0;
     let baseSpeed = 0.05;
     let gameOverFlag = false;
+    let configMode = false;
 
     // controle de câmera
-    let yaw = 0;   // esquerda/direita
-    let pitch = 0; // cima/baixo
+    let yaw = 0;
+    let pitch = -0.3;
     let sensitivity = 0.002;
     let pointerLocked = false;
 
+    // offsets de calibração
+    let yawOffset = 0;
+    let pitchOffset = 0;
+    let rollOffset = 0;
+
     playBtn.onclick = start;
+    configBtn.onclick = openConfig;
+    calibrateBtn.onclick = calibrate;
 
     function start() {
       overlay.hidden = true;
+      calibrateBtn.hidden = true;
+      configMode = false;
       init();
       animate();
+    }
+
+    function openConfig() {
+      overlay.hidden = true;
+      calibrateBtn.hidden = false;
+      configMode = true;
+      init();
+      animate();
+    }
+
+    function calibrate() {
+      yawOffset = yaw;
+      pitchOffset = pitch;
+      rollOffset = angle;
+      alert("Tela calibrada!");
     }
 
     function init() {
@@ -103,11 +134,8 @@
       addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
       addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
-      // Mouse look
       document.body.addEventListener('click', () => {
-        if (!pointerLocked) {
-          renderer.domElement.requestPointerLock();
-        }
+        if (!pointerLocked) renderer.domElement.requestPointerLock();
       });
       document.addEventListener('pointerlockchange', () => {
         pointerLocked = document.pointerLockElement === renderer.domElement;
@@ -120,55 +148,52 @@
         }
       });
 
-      // Giroscópio: separa visão (yaw/pitch) do equilíbrio (roll)
       window.addEventListener('deviceorientation', (e) => {
         const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-        let gamma = e.gamma || 0; // inclinação lateral
-        let beta = e.beta || 0;   // frente/trás
-        let alpha = e.alpha || 0; // bússola
+        let gamma = e.gamma || 0;
+        let beta = e.beta || 0;
+        let alpha = e.alpha || 0;
 
         if (Math.abs(orientation) === 90) {
-          // Landscape
-          angle -= beta * 0.0005; // equilíbrio
-          yaw = THREE.MathUtils.degToRad(alpha);
-          pitch = -THREE.MathUtils.degToRad(gamma) * 0.5; // invertido para ficar natural
+          angle = -beta * 0.0005;
+          yaw = THREE.MathUtils.degToRad(alpha) - yawOffset;
+          pitch = -THREE.MathUtils.degToRad(gamma) * 0.5 - 0.3 - pitchOffset;
         } else {
-          // Portrait
-          angle -= gamma * 0.0005; // equilíbrio
-          yaw = THREE.MathUtils.degToRad(alpha);
-          pitch = -THREE.MathUtils.degToRad(beta) * 0.5; // invertido para ficar natural
+          angle = -gamma * 0.0005;
+          yaw = THREE.MathUtils.degToRad(alpha) - yawOffset;
+          pitch = -THREE.MathUtils.degToRad(beta) * 0.5 - 0.3 - pitchOffset;
         }
         pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
       });
     }
 
     function update(dt) {
-      driftTimer -= dt;
-      if (driftTimer <= 0) {
-        driftTimer = 1 + Math.random() * 1.5;
-        driftTarget = (Math.random() * 2 - 1) * 1.2;
+      if (!configMode) {
+        driftTimer -= dt;
+        if (driftTimer <= 0) {
+          driftTimer = 1 + Math.random() * 1.5;
+          driftTarget = (Math.random() * 2 - 1) * 1.2;
+        }
+        drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
+
+        let control = 0;
+        if (keys.a) control -= 1;
+        if (keys.d) control += 1;
+
+        angVel += (drift * 0.5 + control * baseControlPower) * dt;
+        angVel *= Math.pow(damping, dt * 60);
+        angle += angVel * dt;
+        camera.position.z -= 2 * dt;
+
+        progress = Math.min(1, progress + baseSpeed * dt);
+        fillEl.style.width = (progress * 100).toFixed(1) + '%';
+        statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : 'Equilibre-se';
+
+        if (Math.abs(angle) > maxAngle) return gameOver(false);
+        if (progress >= 1) return gameOver(true);
       }
-      drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
 
-      let control = 0;
-      if (keys.a) control -= 1;
-      if (keys.d) control += 1;
-
-      angVel += (drift * 0.5 + control * baseControlPower) * dt;
-      angVel *= Math.pow(damping, dt * 60);
-      angle += angVel * dt;
-
-      // aplica rotação da câmera (pitch, yaw, roll)
-      camera.rotation.set(pitch, yaw, angle);
-
-      camera.position.z -= 2 * dt;
-
-      progress = Math.min(1, progress + baseSpeed * dt);
-      fillEl.style.width = (progress * 100).toFixed(1) + '%';
-      statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : 'Equilibre-se';
-
-      if (Math.abs(angle) > maxAngle) return gameOver(false);
-      if (progress >= 1) return gameOver(true);
+      camera.rotation.set(pitch, yaw, angle - rollOffset);
     }
 
     let last = performance.now();

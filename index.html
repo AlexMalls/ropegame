@@ -144,27 +144,24 @@
         let currentPitch = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
 
         if (!calibrationDone) {
-          calibrationSamples.push({yaw: currentYaw, pitch: currentPitch});
-
-          // depois de 30 amostras (~0.5s), define offset
+          calibrationSamples.push(currentPitch);
+        
           if (calibrationSamples.length >= 30) {
-            let sumYaw = 0, sumPitch = 0;
-            calibrationSamples.forEach(s => { sumYaw += s.yaw; sumPitch += s.pitch; });
-            yawOffset = sumYaw / calibrationSamples.length;
+            let sumPitch = 0;
+            calibrationSamples.forEach(p => sumPitch += p);
             pitchOffset = sumPitch / calibrationSamples.length;
             calibrationDone = true;
           }
         } else {
           if (Math.abs(orientation) === 90) {
             angle -= beta * 0.0005;
-            yaw = currentYaw - yawOffset;
+            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
             pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
           } else {
             angle -= gamma * 0.0005;
-            yaw = currentYaw - yawOffset;
+            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
             pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
           }
-          pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
         }
       });
     }
@@ -219,3 +216,4 @@
   </script>
 </body>
 </html>
+

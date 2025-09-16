@@ -2,61 +2,45 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Balanço na Corda 3D — VR Box</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Balanço na Corda 3D</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: black; font-family: system-ui, sans-serif; }
     canvas { display: block; }
-    #hud { position: fixed; top: 0; left: 0; right: 0; padding: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; z-index: 2; }
+    #hud { position: fixed; top: 0; left: 0; right: 0; padding: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
     .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
     .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; color:#eee; }
-    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; transition: opacity 1s; z-index: 3; }
+    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; transition: opacity 1s; }
     #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; }
-    button { margin-top: 12px; margin-right: 8px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
     [hidden] { display: none !important; }
-    #vrconfig { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); color:#0f0; font-size:12px; font-family:monospace; padding:6px; z-index:4; }
   </style>
 </head>
 <body>
   <div id="hud">
-    <div class="chip">VR Box: mova o celular • A/D no PC</div>
+    <div class="chip">Use A/D ou mova o celular</div>
     <div class="bar"><div class="fill" id="fill"></div></div>
     <div class="chip" id="status">Pronto</div>
   </div>
 
   <div id="overlay">
     <div id="panel">
-      <h1>Balanço na Corda 3D — VR Box</h1>
-      <p>Escolha o modo:</p>
+      <h1>Balanço na Corda 3D</h1>
+      <p>Você está em uma corda suspensa sobre um desfiladeiro. O movimento para frente é automático.<br>
+      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.<br>
+      Agora você também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
       <button id="play">Jogar</button>
-      <button id="calibrate">Calibragem</button>
     </div>
   </div>
 
-  <div id="vrconfig">
-    IPD: <span id="cfg-ipd">0</span> • Offset: <span id="cfg-offset">0</span> • Convergência: <span id="cfg-conv">0</span>
-  </div>
-
-  <!-- Three r147 -->
+  <!-- Three r147 (global THREE.*) -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
 
   <script>
   (() => {
-    // ====== Parâmetros VR ======
-    let stereoEnabled = true;
-    let ipd = 0.064;             // distância interpupilar (metros)
-    let eyeDistance = ipd * 0.5;
-    let convergence = 0.0;       // convergência (ângulo extra)
-    let offset = 0.0;            // deslocamento vertical
-    // ===========================
-
-    let scene, renderer;
-    let headCam, leftCam, rightCam;
-    let rope, floor;
-
-    // jogo
+    let scene, camera, renderer, rope, floor;
     let angle = 0, angVel = 0;
     const maxAngle = 0.5;
     const damping = 0.985;
@@ -67,26 +51,20 @@
 
     const overlay = document.getElementById('overlay');
     const playBtn = document.getElementById('play');
-    const calibrateBtn = document.getElementById('calibrate');
     const fillEl = document.getElementById('fill');
     const statusEl = document.getElementById('status');
-
-    const cfgIpd = document.getElementById('cfg-ipd');
-    const cfgOffset = document.getElementById('cfg-offset');
-    const cfgConv = document.getElementById('cfg-conv');
 
     let progress = 0;
     let baseSpeed = 0.05;
     let gameOverFlag = false;
-    let gameReady = false;
-    let calibrationMode = false;
+    let gameReady = false; // só começa após o "Equilibre-se"
 
-    // Head orientation
+    // câmera
     let yaw = 0, pitch = 0;
     let sensitivity = 0.002;
     let pointerLocked = false;
 
-    // Calibração (pitch)
+    // calibração (média inicial do pitch)
     let calibrationSamples = [], calibrationDone = false;
     let pitchOffset = 0;
 
@@ -96,11 +74,9 @@
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    playBtn.onclick = () => start(false);
-    calibrateBtn.onclick = () => start(true);
+    playBtn.onclick = start;
 
-    function start(calib) {
-      calibrationMode = calib;
+    function start() {
       overlay.style.opacity = 0;
       setTimeout(() => overlay.hidden = true, 1000);
 
@@ -110,51 +86,42 @@
 
       init();
       animate();
-
-      if (!calibrationMode) startCountdown();
-      else gameReady = true; // sem contagem, entra direto
+      startCountdown();
     }
 
     function init() {
       scene = new THREE.Scene();
-      headCam = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 1000);
-      headCam.position.set(0, 1.6, 5);
-
-      const w = Math.max(1, Math.floor(window.innerWidth / 2));
-      const h = Math.max(1, window.innerHeight);
-
-      leftCam  = new THREE.PerspectiveCamera(headCam.fov, w / h, headCam.near, headCam.far);
-      rightCam = new THREE.PerspectiveCamera(headCam.fov, w / h, headCam.near, headCam.far);
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 1.6, 5);
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      renderer.setScissorTest(true);
+      // renderer.outputEncoding = THREE.sRGBEncoding; // opcional
       document.body.appendChild(renderer.domElement);
 
-      scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
+      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
+      scene.add(light);
 
-      const floorGeo = new THREE.PlaneGeometry(400, 400, 20, 20);
+      const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
       const floorMat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
       floor = new THREE.Mesh(floorGeo, floorMat);
       floor.rotation.x = -Math.PI / 2;
       floor.position.y = -5;
       scene.add(floor);
 
-      const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 200);
+      const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
       const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
       rope = new THREE.Mesh(ropeGeo, ropeMat);
       scene.add(rope);
 
-      window.addEventListener('resize', onResize);
-      document.addEventListener('keydown', (e) => {
-        if(e.key==='a') keys.a = true;
-        if(e.key==='d') keys.d = true;
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
       });
-      document.addEventListener('keyup', (e) => {
-        if(e.key==='a') keys.a = false;
-        if(e.key==='d') keys.d = false;
-      });
+
+      addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
+      addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
       document.body.addEventListener('click', () => {
         if (!pointerLocked && renderer.domElement.requestPointerLock) renderer.domElement.requestPointerLock();
@@ -164,7 +131,7 @@
       });
       document.addEventListener('mousemove', (e) => {
         if (pointerLocked) {
-          yaw   -= e.movementX * sensitivity;
+          yaw -= e.movementX * sensitivity;
           pitch -= e.movementY * sensitivity;
           pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
         }
@@ -174,13 +141,16 @@
       window.addEventListener('deviceorientation', (e) => {
         const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
         let gamma = e.gamma || 0, beta = e.beta || 0, alpha = e.alpha || 0;
+
         let currentPitch = Math.abs(orientation) === 90
           ? THREE.MathUtils.degToRad(gamma) * 0.5
           : THREE.MathUtils.degToRad(beta) * 0.5;
+
         if (!calibrationDone) {
           calibrationSamples.push(currentPitch);
-          if (calibrationSamples.length >= 12) {
-            let sumPitch = calibrationSamples.reduce((a,b)=>a+b,0);
+          if (calibrationSamples.length >= 15) {
+            let sumPitch = 0;
+            for (let p of calibrationSamples) sumPitch += p;
             pitchOffset = sumPitch / calibrationSamples.length;
             calibrationDone = true;
           }
@@ -196,59 +166,106 @@
           }
         }
       });
+
+      // iOS: pedir permissão após gesto
+      renderer.domElement.addEventListener('click', async () => {
+        const D = window.DeviceOrientationEvent;
+        if (D && typeof D.requestPermission === 'function') {
+          try { await D.requestPermission(); } catch {}
+        }
+      });
+
+      // Raycast clique/toque
+      window.addEventListener('mousedown', onClick);
+      window.addEventListener('touchstart', (e) => {
+        if(e.touches.length>0){
+          onClick({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+        }
+      });
     }
 
-    function onResize(){
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      const w = Math.max(1, Math.floor(window.innerWidth / 2));
-      const h = Math.max(1, window.innerHeight);
-      headCam.aspect = window.innerWidth / window.innerHeight;
-      headCam.updateProjectionMatrix();
-      leftCam.aspect  = w / h;
-      rightCam.aspect = w / h;
-      leftCam.updateProjectionMatrix();
-      rightCam.updateProjectionMatrix();
-    }
-
-    // Texto 3D via canvas
-    function createTextPlane(text, opts={}) {
-      const {
-        font='700 96px system-ui', fill='#fff',
-        stroke='#000', strokeWidth=8, padding=32, worldHeight=1.2
-      } = opts;
-      const dpr = Math.min(window.devicePixelRatio||1, 2);
+    // --------- Texto via Canvas (suporta acentos) ----------
+    function createTextPlane(text, {
+      font = '700 96px system-ui',
+      fill = '#ffffff',
+      stroke = '#000000',
+      strokeWidth = 8,
+      padding = 32,
+      maxWidth = null,
+      align = 'center',
+      worldHeight = 1.2   // altura do plano em unidades do mundo
+    } = {}) {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      ctx.font = font;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const lines = String(text).split('\n');
-      const lineHeight = 110;
-      let maxLineWidth=0;
-      for(const line of lines){ maxLineWidth=Math.max(maxLineWidth,ctx.measureText(line).width); }
-      const textW = Math.ceil(maxLineWidth)+padding*2;
-      const textH = Math.ceil(lines.length*lineHeight)+padding*2;
-      canvas.width=Math.ceil(textW*dpr); canvas.height=Math.ceil(textH*dpr);
-      ctx.scale(dpr,dpr);
-      ctx.font=font; ctx.textAlign='center'; ctx.textBaseline='middle';
-      const cx=(canvas.width/dpr)/2, startY=padding+lineHeight/2;
-      for(let i=0;i<lines.length;i++){const y=startY+i*lineHeight;
-        if(strokeWidth>0){ctx.lineWidth=strokeWidth;ctx.strokeStyle=stroke;ctx.strokeText(lines[i],cx,y);}
-        ctx.fillStyle=fill; ctx.fillText(lines[i],cx,y);}
-      const tex=new THREE.CanvasTexture(canvas);
-      const aspect=canvas.width/canvas.height; const worldWidth=worldHeight*aspect;
-      const geo=new THREE.PlaneGeometry(worldWidth,worldHeight);
-      const mat=new THREE.MeshBasicMaterial({map:tex,transparent:true});
-      return new THREE.Mesh(geo,mat);
-    }
 
+      // Medidas de texto
+      ctx.font = font;
+      ctx.textAlign = align;
+      ctx.textBaseline = 'middle';
+
+      const lines = String(text).split('\n');
+      const lineHeight = 110; // px, ajuste fino para a fonte escolhida
+
+      // mede a largura máxima
+      let maxLineWidth = 0;
+      for (const line of lines) {
+        const w = ctx.measureText(line).width;
+        if (w > maxLineWidth) maxLineWidth = w;
+      }
+
+      const textW = Math.ceil(maxLineWidth) + padding * 2;
+      const textH = Math.ceil(lines.length * lineHeight) + padding * 2;
+
+      canvas.width  = Math.ceil(textW * dpr);
+      canvas.height = Math.ceil(textH * dpr);
+
+      ctx.scale(dpr, dpr);
+      ctx.font = font;
+      ctx.textAlign = align;
+      ctx.textBaseline = 'middle';
+
+      // fundo transparente; contorno + preenchimento
+      const centerX = align === 'center' ? canvas.width / (2*dpr) : padding;
+      const startY = padding + lineHeight/2;
+
+      for (let i = 0; i < lines.length; i++) {
+        const y = startY + i * lineHeight;
+        if (strokeWidth > 0) {
+          ctx.lineWidth = strokeWidth;
+          ctx.strokeStyle = stroke;
+          ctx.strokeText(lines[i], centerX, y);
+        }
+        ctx.fillStyle = fill;
+        ctx.fillText(lines[i], centerX, y);
+      }
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      // tex.encoding = THREE.sRGBEncoding; // opcional
+
+      const aspect = canvas.width / canvas.height;
+      const worldWidth = worldHeight * aspect;
+
+      const geo = new THREE.PlaneGeometry(worldWidth, worldHeight);
+      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+      const mesh = new THREE.Mesh(geo, mat);
+      return mesh;
+    }
+    // ------------------------------------------------------
+
+    // Contador
     function createCountdownText(text) {
       if (countdownMesh) scene.remove(countdownMesh);
-      countdownMesh = createTextPlane(text, { worldHeight: 1.2 });
-      const dir = new THREE.Vector3(); headCam.getWorldDirection(dir);
-      const pos = headCam.position.clone().add(dir.multiplyScalar(4));
-      countdownMesh.position.copy(pos);
-      countdownMesh.position.y += 1;
+      countdownMesh = createTextPlane(text, {
+        font: '700 96px system-ui',
+        fill: '#ffffff',
+        stroke: '#000000',
+        strokeWidth: 10,
+        worldHeight: 1.2
+      });
+      countdownMesh.position.set(0, 2, -3); // no mundo, à frente do spawn
       scene.add(countdownMesh);
     }
 
@@ -257,77 +274,124 @@
       setTimeout(() => createCountdownText("2"), 2000);
       setTimeout(() => createCountdownText("1"), 3000);
       setTimeout(() => createCountdownText("Equilibre-se"), 4000);
-      setTimeout(() => { if(countdownMesh) scene.remove(countdownMesh); gameReady=true; }, 5000);
+      setTimeout(() => {
+        if (countdownMesh) scene.remove(countdownMesh);
+        gameReady = true;
+      }, 5000);
     }
 
-    function updateStereoCameras() {
-      headCam.rotation.set(pitch,yaw,angle);
-      const forward=new THREE.Vector3(); headCam.getWorldDirection(forward).normalize();
-      const up=new THREE.Vector3(0,1,0).applyQuaternion(headCam.quaternion);
-      const right=new THREE.Vector3().crossVectors(forward,up).normalize().multiplyScalar(-1);
-      leftCam.position.copy(headCam.position).addScaledVector(right,-eyeDistance).addScaledVector(up,offset);
-      rightCam.position.copy(headCam.position).addScaledVector(right, eyeDistance).addScaledVector(up,offset);
-      leftCam.quaternion.copy(headCam.quaternion);
-      rightCam.quaternion.copy(headCam.quaternion);
-      leftCam.rotation.y += convergence;
-      rightCam.rotation.y -= convergence;
+    // Fim de jogo (cria na frente da câmera)
+    function showGameOverText(win) {
+      // sair do pointer lock pra permitir clique
+      if (document.exitPointerLock) document.exitPointerLock();
+
+      const msg = win ? "Você conseguiu!" : "Você caiu!";
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      const basePos = camera.position.clone().add(dir.multiplyScalar(5));
+
+      // título
+      const titleMesh = createTextPlane(msg, {
+        font: '800 88px system-ui',
+        fill: win ? '#00ff88' : '#ff4444',
+        stroke: '#000000',
+        strokeWidth: 10,
+        worldHeight: 1.2
+      });
+      titleMesh.position.copy(basePos);
+      titleMesh.position.y += 1; // um pouco acima
+      scene.add(titleMesh);
+
+      // botão
+      const btnMesh = createTextPlane("Recomeçar", {
+        font: '700 72px system-ui',
+        fill: '#ffffff',
+        stroke: '#000000',
+        strokeWidth: 8,
+        worldHeight: 0.9
+      });
+      btnMesh.position.copy(basePos);
+      btnMesh.position.y -= 0.2;
+      scene.add(btnMesh);
+
+      // marca para raycast
+      btnMesh.userData.isRestart = true;
+      clickableObjects.length = 0;
+      clickableObjects.push(btnMesh);
+    }
+
+    function onClick(event) {
+      // se ainda no jogo e com pointer lock, não fazemos raycast de UI
+      if (!gameOverFlag && pointerLocked) return;
+
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(clickableObjects, true);
+      if (intersects.length > 0) {
+        const obj = intersects[0].object;
+        if (obj.userData.isRestart) {
+          location.reload();
+        }
+      }
     }
 
     function update(dt) {
-      if (!gameReady || gameOverFlag) { updateStereoCameras(); return; }
-      if (!calibrationMode) {
-        driftTimer -= dt;
-        if (driftTimer<=0){driftTimer=1+Math.random()*1.5; driftTarget=(Math.random()*2-1)*1.2;}
-        drift+=(driftTarget-drift)*(1-Math.pow(0.001,dt));
-        let control=0; if(keys.a) control-=1; if(keys.d) control+=1;
-        angVel += (drift*0.5+control*baseControlPower)*dt;
-        angVel *= Math.pow(damping,dt*60);
-        angle += angVel*dt;
-        headCam.position.z -= 2*dt;
-        progress=Math.min(1,progress+baseSpeed*dt);
-        fillEl.style.width=(progress*100).toFixed(1)+'%';
-        statusEl.textContent=Math.abs(angle)>=maxAngle*0.8?'Perigo!':'Equilibre-se';
-        if(Math.abs(angle)>maxAngle) return gameOver(false);
-        if(progress>=1) return gameOver(true);
+      if (!gameReady || gameOverFlag) {
+        camera.rotation.set(pitch, yaw, angle);
+        return;
       }
-      updateStereoCameras();
-      cfgIpd.textContent = ipd.toFixed(3);
-      cfgOffset.textContent = offset.toFixed(3);
-      cfgConv.textContent = convergence.toFixed(3);
+
+      driftTimer -= dt;
+      if (driftTimer <= 0) {
+        driftTimer = 1 + Math.random() * 1.5;
+        driftTarget = (Math.random() * 2 - 1) * 1.2;
+      }
+      drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
+
+      let control = 0;
+      if (keys.a) control -= 1;
+      if (keys.d) control += 1;
+
+      angVel += (drift * 0.5 + control * baseControlPower) * dt;
+      angVel *= Math.pow(damping, dt * 60);
+      angle += angVel * dt;
+
+      camera.rotation.set(pitch, yaw, angle);
+      camera.position.z -= 2 * dt;
+
+      progress = Math.min(1, progress + baseSpeed * dt);
+      fillEl.style.width = (progress * 100).toFixed(1) + '%';
+      statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : 'Equilibre-se';
+
+      if (Math.abs(angle) > maxAngle) return gameOver(false);
+      if (progress >= 1) return gameOver(true);
     }
 
-    let last=performance.now();
+    let last = performance.now();
     function animate() {
       requestAnimationFrame(animate);
-      const now=performance.now(), dt=Math.min(0.05,(now-last)/1000); last=now;
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+
       update(dt);
-      const w=Math.max(1,Math.floor(window.innerWidth/2)), h=Math.max(1,window.innerHeight);
-      renderer.setViewport(0,0,w,h); renderer.setScissor(0,0,w,h); renderer.render(scene,leftCam);
-      renderer.setViewport(w,0,w,h); renderer.setScissor(w,0,w,h); renderer.render(scene,rightCam);
+      renderer.render(scene, camera);
     }
 
     function gameOver(win) {
-      gameOverFlag=true;
-      const msg=win?"Você conseguiu!":"Você caiu!";
-      const dir=new THREE.Vector3(); headCam.getWorldDirection(dir);
-      const pos=headCam.position.clone().add(dir.multiplyScalar(5));
-      const title=createTextPlane(msg,{fill:win?'#0f8':'#f44',strokeWidth:10,worldHeight:1.2});
-      title.position.copy(pos); title.position.y+=1; scene.add(title);
-      const btn=createTextPlane("Recomeçar",{worldHeight:0.9});
-      btn.position.copy(pos); btn.position.y-=0.2; scene.add(btn);
-      btn.userData.isRestart=true; clickableObjects.length=0; clickableObjects.push(btn);
+      gameOverFlag = true;
+      showGameOverText(win);
     }
 
-    function onClick(e){
-      if(!gameOverFlag && pointerLocked) return;
-      mouse.x=(e.clientX/window.innerWidth)*2-1;
-      mouse.y=-(e.clientY/window.innerHeight)*2+1;
-      raycaster.setFromCamera(mouse,headCam);
-      const hits=raycaster.intersectObjects(clickableObjects,true);
-      if(hits.length>0 && hits[0].object.userData.isRestart) location.reload();
-    }
-    window.addEventListener('mousedown',onClick);
-    window.addEventListener('touchstart',(e)=>{if(e.touches.length>0)onClick(e.touches[0]);});
+    // eventos finais
+    window.addEventListener('mousedown', onClick);
+    window.addEventListener('touchstart', (e) => {
+      if(e.touches.length>0){
+        onClick({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+      }
+    });
+
   })();
   </script>
 </body>

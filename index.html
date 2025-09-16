@@ -2,16 +2,16 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Balanço na Corda 3D</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Balanço na Corda 3D — VR Box</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: black; font-family: system-ui, sans-serif; }
     canvas { display: block; }
-    #hud { position: fixed; top: 0; left: 0; right: 0; padding: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
+    #hud { position: fixed; top: 0; left: 0; right: 0; padding: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; z-index: 2; }
     .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
     .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; color:#eee; }
-    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; transition: opacity 1s; }
+    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; transition: opacity 1s; z-index: 3; }
     #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; }
     button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
@@ -20,17 +20,17 @@
 </head>
 <body>
   <div id="hud">
-    <div class="chip">Use A/D ou mova o celular</div>
+    <div class="chip">VR Box: mova o celular • A/D no PC</div>
     <div class="bar"><div class="fill" id="fill"></div></div>
     <div class="chip" id="status">Pronto</div>
   </div>
 
   <div id="overlay">
     <div id="panel">
-      <h1>Balanço na Corda 3D</h1>
-      <p>Você está em uma corda suspensa sobre um desfiladeiro. O movimento para frente é automático.<br>
-      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.<br>
-      Agora você também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
+      <h1>Balanço na Corda 3D — VR Box</h1>
+      <p>Render estereoscópico com correção simples de lente.<br>
+      Use <b>A</b> e <b>D</b> no PC ou mova o celular para se equilibrar.<br>
+      Olhar ao redor: <b>mouse</b> (PC) ou <b>giroscópio</b> (celular).</p>
       <button id="play">Jogar</button>
     </div>
   </div>
@@ -40,7 +40,24 @@
 
   <script>
   (() => {
-    let scene, camera, renderer, rope, floor;
+    // ====== Parâmetros VR ======
+    let stereoEnabled = true;
+    let ipd = 0.064;              // distância entre olhos (em unidades do mundo)
+    let eyeDistance = ipd * 0.5;  // metade para cada lado
+    // Correção de lente simples (barrel). Ajuste k para sua lente (0.10..0.30)
+    const lensK = 0.18;
+    // ===========================
+
+    let scene, renderer;
+    let headCam;                 // câmera "central" (cabeça)
+    let leftCam, rightCam;       // câmeras dos olhos
+    let rope, floor;
+
+    // pós-processamento: render targets para cada olho
+    let rtLeft, rtRight;
+    let postScene, postCam, leftQuad, rightQuad, leftMat, rightMat;
+
+    // jogo
     let angle = 0, angVel = 0;
     const maxAngle = 0.5;
     const damping = 0.985;
@@ -57,18 +74,18 @@
     let progress = 0;
     let baseSpeed = 0.05;
     let gameOverFlag = false;
-    let gameReady = false; // só começa após o "Equilibre-se"
+    let gameReady = false;
 
-    // câmera
+    // Head orientation (aplicada na headCam)
     let yaw = 0, pitch = 0;
     let sensitivity = 0.002;
     let pointerLocked = false;
 
-    // calibração (média inicial do pitch)
+    // Calibração (pitch)
     let calibrationSamples = [], calibrationDone = false;
     let pitchOffset = 0;
 
-    // UI 3D
+    // UI 3D via canvas
     let countdownMesh;
     const clickableObjects = [];
     const raycaster = new THREE.Raycaster();
@@ -90,38 +107,113 @@
     }
 
     function init() {
+      // ===== Cena principal =====
       scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 1.6, 5);
 
-      renderer = new THREE.WebGLRenderer({ antialias: true });
+      headCam = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 1000);
+      headCam.position.set(0, 1.6, 5);
+
+      leftCam  = new THREE.PerspectiveCamera(headCam.fov, 0.5 * window.innerWidth / window.innerHeight, headCam.near, headCam.far);
+      rightCam = new THREE.PerspectiveCamera(headCam.fov, 0.5 * window.innerWidth / window.innerHeight, headCam.near, headCam.far);
+
+      renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      // renderer.outputEncoding = THREE.sRGBEncoding; // opcional
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       document.body.appendChild(renderer.domElement);
 
       const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
       scene.add(light);
 
-      const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
+      // chão e "corda"
+      const floorGeo = new THREE.PlaneGeometry(400, 400, 20, 20);
       const floorMat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
       floor = new THREE.Mesh(floorGeo, floorMat);
       floor.rotation.x = -Math.PI / 2;
       floor.position.y = -5;
       scene.add(floor);
 
-      const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
+      const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 200);
       const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
       rope = new THREE.Mesh(ropeGeo, ropeMat);
       scene.add(rope);
 
-      window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      });
+      // ===== Render targets por olho =====
+      const rtOpts = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat };
+      rtLeft  = new THREE.WebGLRenderTarget(Math.floor(window.innerWidth/2), window.innerHeight, rtOpts);
+      rtRight = new THREE.WebGLRenderTarget(Math.floor(window.innerWidth/2), window.innerHeight, rtOpts);
+
+      // ===== Cena de pós-processamento (2 quads com shader de distorção) =====
+      postScene = new THREE.Scene();
+      postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+      const quadGeo = new THREE.PlaneGeometry(1, 2); // cobrimos verticalmente; ajustamos por posição/escala
+
+      const lensShader = {
+        uniforms: {
+          map: { value: null },
+          k: { value: lensK },
+          aspect: { value: window.innerWidth / window.innerHeight }
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main(){
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D map;
+          uniform float k;
+          uniform float aspect;
+          varying vec2 vUv;
+
+          // corrige barrel simples
+          vec2 barrel(vec2 uv){
+            // uv 0..1 -> -1..1
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= aspect; // compensar aspect para deformar circularmente
+            float r2 = dot(p, p);
+            vec2 p2 = p * (1.0 + k * r2);
+            p2.x /= aspect;
+            vec2 uv2 = (p2 + 1.0) * 0.5;
+            return uv2;
+          }
+
+          void main(){
+            vec2 uv2 = barrel(vUv);
+            if(any(bvec2(uv2.x < 0.0, uv2.y < 0.0)) || any(bvec2(uv2.x > 1.0, uv2.y > 1.0))){
+              discard; // fora -> preto/transparente
+            }
+            gl_FragColor = texture2D(map, uv2);
+          }
+        `
+      };
+
+      leftMat  = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.clone(lensShader.uniforms), vertexShader: lensShader.vertexShader, fragmentShader: lensShader.fragmentShader, transparent: true });
+      rightMat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.clone(lensShader.uniforms), vertexShader: lensShader.vertexShader, fragmentShader: lensShader.fragmentShader, transparent: true });
+
+      // quads: esquerda e direita
+      leftQuad  = new THREE.Mesh(quadGeo, leftMat);
+      rightQuad = new THREE.Mesh(quadGeo, rightMat);
+
+      // posiciona quads: cada um ocupa meia tela em NDC
+      // Escala no X para ocupar metade; posiciona X no centro da metade
+      leftQuad.position.set(-0.5, 0.0, 0.0);
+      rightQuad.position.set( 0.5, 0.0, 0.0);
+      leftQuad.scale.set(0.5, 1.0, 1.0);
+      rightQuad.scale.set(0.5, 1.0, 1.0);
+
+      postScene.add(leftQuad);
+      postScene.add(rightQuad);
+
+      leftMat.uniforms.map.value  = rtLeft.texture;
+      rightMat.uniforms.map.value = rtRight.texture;
+
+      // eventos
+      window.addEventListener('resize', onResize);
 
       addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
-      addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
+      addEventListener('keyup',   (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
       document.body.addEventListener('click', () => {
         if (!pointerLocked && renderer.domElement.requestPointerLock) renderer.domElement.requestPointerLock();
@@ -131,7 +223,7 @@
       });
       document.addEventListener('mousemove', (e) => {
         if (pointerLocked) {
-          yaw -= e.movementX * sensitivity;
+          yaw   -= e.movementX * sensitivity;
           pitch -= e.movementY * sensitivity;
           pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
         }
@@ -148,7 +240,7 @@
 
         if (!calibrationDone) {
           calibrationSamples.push(currentPitch);
-          if (calibrationSamples.length >= 15) {
+          if (calibrationSamples.length >= 12) {
             let sumPitch = 0;
             for (let p of calibrationSamples) sumPitch += p;
             pitchOffset = sumPitch / calibrationSamples.length;
@@ -156,7 +248,7 @@
           }
         } else {
           if (Math.abs(orientation) === 90) {
-            angle -= beta * 0.0005;
+            angle -= beta * 0.0005; // equilíbrio
             yaw = THREE.MathUtils.degToRad(alpha);
             pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
           } else {
@@ -175,7 +267,7 @@
         }
       });
 
-      // Raycast clique/toque
+      // Raycast para UI 3D (fim de jogo)
       window.addEventListener('mousedown', onClick);
       window.addEventListener('touchstart', (e) => {
         if(e.touches.length>0){
@@ -184,30 +276,44 @@
       });
     }
 
-    // --------- Texto via Canvas (suporta acentos) ----------
+    function onResize(){
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      headCam.aspect = window.innerWidth / window.innerHeight;
+      headCam.updateProjectionMatrix();
+
+      leftCam.aspect  = 0.5 * window.innerWidth / window.innerHeight;
+      rightCam.aspect = 0.5 * window.innerWidth / window.innerHeight;
+      leftCam.updateProjectionMatrix();
+      rightCam.updateProjectionMatrix();
+
+      rtLeft.setSize(Math.floor(window.innerWidth/2), window.innerHeight);
+      rtRight.setSize(Math.floor(window.innerWidth/2), window.innerHeight);
+
+      // atualizar aspect no shader
+      leftMat.uniforms.aspect.value  = window.innerWidth / window.innerHeight;
+      rightMat.uniforms.aspect.value = window.innerWidth / window.innerHeight;
+    }
+
+    // ======= UI 3D via Canvas (acentos ok) =======
     function createTextPlane(text, {
       font = '700 96px system-ui',
       fill = '#ffffff',
       stroke = '#000000',
       strokeWidth = 8,
       padding = 32,
-      maxWidth = null,
-      align = 'center',
-      worldHeight = 1.2   // altura do plano em unidades do mundo
+      worldHeight = 1.2
     } = {}) {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
 
-      // Medidas de texto
       ctx.font = font;
-      ctx.textAlign = align;
+      ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
       const lines = String(text).split('\n');
-      const lineHeight = 110; // px, ajuste fino para a fonte escolhida
+      const lineHeight = 110;
 
-      // mede a largura máxima
       let maxLineWidth = 0;
       for (const line of lines) {
         const w = ctx.measureText(line).width;
@@ -219,14 +325,12 @@
 
       canvas.width  = Math.ceil(textW * dpr);
       canvas.height = Math.ceil(textH * dpr);
-
       ctx.scale(dpr, dpr);
-      ctx.font = font;
-      ctx.textAlign = align;
-      ctx.textBaseline = 'middle';
 
-      // fundo transparente; contorno + preenchimento
-      const centerX = align === 'center' ? canvas.width / (2*dpr) : padding;
+      ctx.font = font;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const cx = (canvas.width / dpr) / 2;
       const startY = padding + lineHeight/2;
 
       for (let i = 0; i < lines.length; i++) {
@@ -234,28 +338,24 @@
         if (strokeWidth > 0) {
           ctx.lineWidth = strokeWidth;
           ctx.strokeStyle = stroke;
-          ctx.strokeText(lines[i], centerX, y);
+          ctx.strokeText(lines[i], cx, y);
         }
         ctx.fillStyle = fill;
-        ctx.fillText(lines[i], centerX, y);
+        ctx.fillText(lines[i], cx, y);
       }
 
       const tex = new THREE.CanvasTexture(canvas);
       tex.minFilter = THREE.LinearFilter;
       tex.magFilter = THREE.LinearFilter;
-      // tex.encoding = THREE.sRGBEncoding; // opcional
 
       const aspect = canvas.width / canvas.height;
       const worldWidth = worldHeight * aspect;
-
       const geo = new THREE.PlaneGeometry(worldWidth, worldHeight);
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
-      const mesh = new THREE.Mesh(geo, mat);
-      return mesh;
+      return new THREE.Mesh(geo, mat);
     }
-    // ------------------------------------------------------
 
-    // Contador
+    // Contador (fixo próximo do spawn)
     function createCountdownText(text) {
       if (countdownMesh) scene.remove(countdownMesh);
       countdownMesh = createTextPlane(text, {
@@ -265,7 +365,7 @@
         strokeWidth: 10,
         worldHeight: 1.2
       });
-      countdownMesh.position.set(0, 2, -3); // no mundo, à frente do spawn
+      countdownMesh.position.set(0, 2, -3);
       scene.add(countdownMesh);
     }
 
@@ -280,17 +380,15 @@
       }, 5000);
     }
 
-    // Fim de jogo (cria na frente da câmera)
+    // Fim de jogo (sempre na frente da câmera)
     function showGameOverText(win) {
-      // sair do pointer lock pra permitir clique
       if (document.exitPointerLock) document.exitPointerLock();
 
       const msg = win ? "Você conseguiu!" : "Você caiu!";
       const dir = new THREE.Vector3();
-      camera.getWorldDirection(dir);
-      const basePos = camera.position.clone().add(dir.multiplyScalar(5));
+      headCam.getWorldDirection(dir);
+      const basePos = headCam.position.clone().add(dir.multiplyScalar(5));
 
-      // título
       const titleMesh = createTextPlane(msg, {
         font: '800 88px system-ui',
         fill: win ? '#00ff88' : '#ff4444',
@@ -299,10 +397,9 @@
         worldHeight: 1.2
       });
       titleMesh.position.copy(basePos);
-      titleMesh.position.y += 1; // um pouco acima
+      titleMesh.position.y += 1;
       scene.add(titleMesh);
 
-      // botão
       const btnMesh = createTextPlane("Recomeçar", {
         font: '700 72px system-ui',
         fill: '#ffffff',
@@ -314,19 +411,18 @@
       btnMesh.position.y -= 0.2;
       scene.add(btnMesh);
 
-      // marca para raycast
       btnMesh.userData.isRestart = true;
       clickableObjects.length = 0;
       clickableObjects.push(btnMesh);
     }
 
     function onClick(event) {
-      // se ainda no jogo e com pointer lock, não fazemos raycast de UI
+      // Quando ainda jogando e com pointer lock, ignoramos UI
       if (!gameOverFlag && pointerLocked) return;
 
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-      raycaster.setFromCamera(mouse, camera);
+      raycaster.setFromCamera(mouse, headCam);
       const intersects = raycaster.intersectObjects(clickableObjects, true);
       if (intersects.length > 0) {
         const obj = intersects[0].object;
@@ -336,9 +432,28 @@
       }
     }
 
+    // ===== Atualização das câmeras dos olhos =====
+    function updateStereoCameras() {
+      // aplica orientação na headCam
+      headCam.rotation.set(pitch, yaw, angle);
+
+      // vetores base
+      const forward = new THREE.Vector3();
+      headCam.getWorldDirection(forward).normalize();
+      const up = new THREE.Vector3(0,1,0).applyQuaternion(headCam.quaternion);
+      const right = new THREE.Vector3().crossVectors(forward, up).normalize().multiplyScalar(-1); // direita real
+
+      // posiciona olhos
+      leftCam.position.copy(headCam.position).addScaledVector(right, -eyeDistance);
+      rightCam.position.copy(headCam.position).addScaledVector(right,  eyeDistance);
+
+      leftCam.quaternion.copy(headCam.quaternion);
+      rightCam.quaternion.copy(headCam.quaternion);
+    }
+
     function update(dt) {
       if (!gameReady || gameOverFlag) {
-        camera.rotation.set(pitch, yaw, angle);
+        updateStereoCameras();
         return;
       }
 
@@ -357,15 +472,18 @@
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
 
-      camera.rotation.set(pitch, yaw, angle);
-      camera.position.z -= 2 * dt;
+      // avança
+      headCam.position.z -= 2 * dt;
 
+      // HUD
       progress = Math.min(1, progress + baseSpeed * dt);
       fillEl.style.width = (progress * 100).toFixed(1) + '%';
       statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : 'Equilibre-se';
 
       if (Math.abs(angle) > maxAngle) return gameOver(false);
       if (progress >= 1) return gameOver(true);
+
+      updateStereoCameras();
     }
 
     let last = performance.now();
@@ -376,22 +494,31 @@
       last = now;
 
       update(dt);
-      renderer.render(scene, camera);
+
+      if (!stereoEnabled) {
+        // fallback: render único (sem VR)
+        renderer.setRenderTarget(null);
+        renderer.render(scene, headCam);
+        return;
+      }
+
+      // Render cena por olho para seus RTs
+      renderer.setRenderTarget(rtLeft);
+      renderer.render(scene, leftCam);
+
+      renderer.setRenderTarget(rtRight);
+      renderer.render(scene, rightCam);
+
+      // Desenha quads com correção de lente por olho
+      renderer.setRenderTarget(null);
+      renderer.clear();
+      renderer.render(postScene, postCam);
     }
 
     function gameOver(win) {
       gameOverFlag = true;
       showGameOverText(win);
     }
-
-    // eventos finais
-    window.addEventListener('mousedown', onClick);
-    window.addEventListener('touchstart', (e) => {
-      if(e.touches.length>0){
-        onClick({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
-      }
-    });
-
   })();
   </script>
 </body>

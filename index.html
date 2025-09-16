@@ -62,22 +62,24 @@
     let sensitivity = 0.002;
     let pointerLocked = false;
 
-    // offsets de calibração automática
+    // calibração automática (média inicial)
+    let calibrationSamples = [];
+    let calibrationDone = false;
     let yawOffset = 0;
     let pitchOffset = 0;
-    let calibrated = false;
 
     playBtn.onclick = start;
 
     function start() {
-      // tenta entrar em fullscreen
+      overlay.hidden = true;
+
+      // tenta entrar em fullscreen (mobile)
       if (document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen();
-      } else if (document.documentElement.webkitRequestFullscreen) { 
-        // Safari iOS
+      } else if (document.documentElement.webkitRequestFullscreen) {
         document.documentElement.webkitRequestFullscreen();
       }
-      overlay.hidden = true;
+
       init();
       animate();
     }
@@ -131,33 +133,39 @@
         }
       });
 
-      // Giroscópio: visão + equilíbrio com calibração automática
+      // Giroscópio com média inicial
       window.addEventListener('deviceorientation', (e) => {
         const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
         let gamma = e.gamma || 0;
         let beta = e.beta || 0;
         let alpha = e.alpha || 0;
 
-        if (!calibrated) {
-          // pega valores iniciais como offset
-          yawOffset = THREE.MathUtils.degToRad(alpha);
-          pitchOffset = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
-          calibrated = true;
-        }
+        let currentYaw = THREE.MathUtils.degToRad(alpha);
+        let currentPitch = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
 
-        if (Math.abs(orientation) === 90) {
-          // Landscape
-          angle -= beta * 0.0005;
-          yaw = THREE.MathUtils.degToRad(alpha) - yawOffset;
-          pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
+        if (!calibrationDone) {
+          calibrationSamples.push({yaw: currentYaw, pitch: currentPitch});
+
+          // depois de 30 amostras (~0.5s), define offset
+          if (calibrationSamples.length >= 30) {
+            let sumYaw = 0, sumPitch = 0;
+            calibrationSamples.forEach(s => { sumYaw += s.yaw; sumPitch += s.pitch; });
+            yawOffset = sumYaw / calibrationSamples.length;
+            pitchOffset = sumPitch / calibrationSamples.length;
+            calibrationDone = true;
+          }
         } else {
-          // Portrait
-          angle -= gamma * 0.0005;
-          yaw = THREE.MathUtils.degToRad(alpha) - yawOffset;
-          pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
+          if (Math.abs(orientation) === 90) {
+            angle -= beta * 0.0005;
+            yaw = currentYaw - yawOffset;
+            pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
+          } else {
+            angle -= gamma * 0.0005;
+            yaw = currentYaw - yawOffset;
+            pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
+          }
+          pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
         }
-
-        pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
       });
     }
 
@@ -211,4 +219,3 @@
   </script>
 </body>
 </html>
-

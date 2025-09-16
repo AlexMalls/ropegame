@@ -3,61 +3,81 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Balanço na Corda 3D — VR Ajustável</title>
+  <title>Balanço na Corda 3D — VR Box (Debug)</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: black; font-family: system-ui, sans-serif; }
     canvas { display: block; }
+
     #hud { position: fixed; top: 0; left: 0; right: 0; padding: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; z-index: 2; }
     .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
     .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; color:#eee; }
+
     #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; transition: opacity 1s; z-index: 3; }
     #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; }
     button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
     [hidden] { display: none !important; }
+
+    /* Painel de Debug */
+    #debug {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      background: rgba(0,0,0,0.7);
+      color: #0f0;
+      padding: 10px;
+      font-size: 12px;
+      line-height: 1.4;
+      z-index: 4;
+      max-width: 260px;
+    }
+    #debug label { display: block; margin-top: 6px; }
+    #debug input { width: 100%; }
   </style>
 </head>
 <body>
   <div id="hud">
-    <div class="chip">VR Box: ajuste IPD • FOV • Convergência</div>
+    <div class="chip">VR Box: mova o celular • A/D no PC</div>
     <div class="bar"><div class="fill" id="fill"></div></div>
     <div class="chip" id="status">Pronto</div>
   </div>
 
   <div id="overlay">
     <div id="panel">
-      <h1>Balanço na Corda 3D — VR Ajustável</h1>
-      <p>Agora você pode ajustar parâmetros iguais ao app do VR Box:<br>
-      <b>IPD</b> (distância entre olhos), <b>convergência</b>, <b>offset</b>, <b>FOV</b> e <b>distorção</b>.</p>
+      <h1>Balanço na Corda 3D — VR Box</h1>
+      <p>Tela dividida por olho usando viewports (sem sobreposição).<br>
+      Use <b>A</b> e <b>D</b> no PC ou mova o celular para se equilibrar.<br>
+      Olhar ao redor: <b>mouse</b> (PC) ou <b>giroscópio</b> (celular).</p>
       <button id="play">Jogar</button>
     </div>
   </div>
 
+  <!-- Painel de Debug -->
+  <div id="debug">
+    <strong>Config VR</strong>
+    <label>IPD <input id="ipdSlider" type="range" min="0.001" max="0.2" step="0.001" value="0.064"></label>
+    <label>Offset X <input id="offsetSlider" type="range" min="-0.5" max="0.5" step="0.01" value="0"></label>
+    <label>Convergência <input id="convSlider" type="range" min="-0.2" max="0.2" step="0.005" value="0"></label>
+    <label>Distorção k <input id="kSlider" type="range" min="0.0" max="0.4" step="0.01" value="0.18"></label>
+    <div id="debugValues"></div>
+  </div>
+
   <!-- Three.js -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+
   <script>
   (() => {
-    // ====== Parâmetros ajustáveis ======
-    let ipd = -0.5;           // distância interpupilar
-    let convergence = 0.5    // rotação angular (toe-in) em radianos
-    let lensK = 0.15;          // distorção de lente
-    let eyeOffsetX = -0.1;      // deslocamento horizontal
-    let eyeOffsetY = 0.0;      // deslocamento vertical
-    let fov = 95;              // campo de visão
-    // ================================
+    // ====== Parâmetros VR (ajustáveis pelo painel) ======
+    let ipd = 0.064;          // distância interpupilar
+    let eyeOffsetX = 0.0;     // offset horizontal
+    let convergence = 0.0;    // ângulo de convergência
+    let lensK = 0.18;         // distorção da lente
+    // ====================================================
 
-    let scene, renderer;
-    let headCam, leftCam, rightCam;
-    let rope, floor;
-
-    let rtLeft, rtRight;
-    let postScene, postCam, leftQuad, rightQuad, leftMat, rightMat;
-
+    let scene, renderer, headCam, leftCam, rightCam, rope, floor;
     let angle = 0, angVel = 0;
-    const maxAngle = 0.5;
-    const damping = 0.985;
-    const baseControlPower = 1.5;
+    const maxAngle = 0.5, damping = 0.985, baseControlPower = 1.5;
     let drift = 0, driftTarget = 0, driftTimer = 0;
 
     const keys = { a: false, d: false };
@@ -65,39 +85,42 @@
     const playBtn = document.getElementById('play');
     const fillEl = document.getElementById('fill');
     const statusEl = document.getElementById('status');
+    let progress = 0, baseSpeed = 0.05, gameOverFlag = false, gameReady = false;
 
-    let progress = 0;
-    let baseSpeed = 0.05;
-    let gameOverFlag = false;
-    let gameReady = false;
+    let yaw = 0, pitch = 0, sensitivity = 0.002, pointerLocked = false;
+    let calibrationSamples = [], calibrationDone = false, pitchOffset = 0;
 
-    let yaw = 0, pitch = 0;
-    let sensitivity = 0.002;
-    let pointerLocked = false;
+    let countdownMesh;
+    const clickableObjects = [], raycaster = new THREE.Raycaster(), mouse = new THREE.Vector2();
 
     playBtn.onclick = start;
 
     function start() {
       overlay.style.opacity = 0;
       setTimeout(() => overlay.hidden = true, 1000);
+
       if (document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(()=>{});
       }
       init();
       animate();
+      startCountdown();
     }
 
     function init() {
       scene = new THREE.Scene();
-      headCam = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 0.05, 1000);
+      headCam = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 1000);
       headCam.position.set(0, 1.6, 5);
 
-      leftCam  = new THREE.PerspectiveCamera(fov, 0.5 * window.innerWidth / window.innerHeight, 0.05, 1000);
-      rightCam = new THREE.PerspectiveCamera(fov, 0.5 * window.innerWidth / window.innerHeight, 0.05, 1000);
+      const w = Math.max(1, Math.floor(window.innerWidth / 2));
+      const h = Math.max(1, window.innerHeight);
+      leftCam  = new THREE.PerspectiveCamera(headCam.fov, w / h, headCam.near, headCam.far);
+      rightCam = new THREE.PerspectiveCamera(headCam.fov, w / h, headCam.near, headCam.far);
 
-      renderer = new THREE.WebGLRenderer({ antialias: false });
+      renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setScissorTest(true);
       document.body.appendChild(renderer.domElement);
 
       const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
@@ -115,97 +138,113 @@
       rope = new THREE.Mesh(ropeGeo, ropeMat);
       scene.add(rope);
 
-      // Render targets
-      const rtOpts = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat };
-      rtLeft  = new THREE.WebGLRenderTarget(Math.floor(window.innerWidth/2), window.innerHeight, rtOpts);
-      rtRight = new THREE.WebGLRenderTarget(Math.floor(window.innerWidth/2), window.innerHeight, rtOpts);
-
-      // Pós-processamento (distorção)
-      postScene = new THREE.Scene();
-      postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-      const quadGeo = new THREE.PlaneGeometry(1, 1);
-
-      const lensShader = {
-        uniforms: {
-          map: { value: null },
-          k: { value: lensK },
-          aspect: { value: window.innerWidth / window.innerHeight }
-        },
-        vertexShader: `varying vec2 vUv;
-          void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-        fragmentShader: `
-          uniform sampler2D map;
-          uniform float k;
-          uniform float aspect;
-          varying vec2 vUv;
-          vec2 barrel(vec2 uv){
-            vec2 p = uv * 2.0 - 1.0;
-            p.x *= aspect;
-            float r2 = dot(p, p);
-            vec2 p2 = p * (1.0 + k * r2);
-            p2.x /= aspect;
-            return (p2 + 1.0) * 0.5;
-          }
-          void main(){
-            vec2 uv2 = barrel(vUv);
-            if(uv2.x < 0.0 || uv2.x > 1.0 || uv2.y < 0.0 || uv2.y > 1.0) discard;
-            gl_FragColor = texture2D(map, uv2);
-          }`
-      };
-
-      leftMat  = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.clone(lensShader.uniforms), vertexShader: lensShader.vertexShader, fragmentShader: lensShader.fragmentShader });
-      rightMat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.clone(lensShader.uniforms), vertexShader: lensShader.vertexShader, fragmentShader: lensShader.fragmentShader });
-      leftMat.uniforms.map.value  = rtLeft.texture;
-      rightMat.uniforms.map.value = rtRight.texture;
-
-      leftQuad  = new THREE.Mesh(quadGeo, leftMat);
-      rightQuad = new THREE.Mesh(quadGeo, rightMat);
-      leftQuad.position.set(-0.5, 0, 0);
-      rightQuad.position.set(0.5, 0, 0);
-      leftQuad.scale.set(1, 2, 1);
-      rightQuad.scale.set(1, 2, 1);
-      postScene.add(leftQuad);
-      postScene.add(rightQuad);
-
       window.addEventListener('resize', onResize);
+      addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
+      addEventListener('keyup',   (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
+
+      document.body.addEventListener('click', () => {
+        if (!pointerLocked && renderer.domElement.requestPointerLock) renderer.domElement.requestPointerLock();
+      });
+      document.addEventListener('pointerlockchange', () => {
+        pointerLocked = document.pointerLockElement === renderer.domElement;
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (pointerLocked) {
+          yaw   -= e.movementX * sensitivity;
+          pitch -= e.movementY * sensitivity;
+          pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+        }
+      });
+
+      // Giroscópio
+      window.addEventListener('deviceorientation', (e) => {
+        const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+        let gamma = e.gamma || 0, beta = e.beta || 0, alpha = e.alpha || 0;
+        let currentPitch = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
+        if (!calibrationDone) {
+          calibrationSamples.push(currentPitch);
+          if (calibrationSamples.length >= 12) {
+            pitchOffset = calibrationSamples.reduce((a,b)=>a+b,0) / calibrationSamples.length;
+            calibrationDone = true;
+          }
+        } else {
+          if (Math.abs(orientation) === 90) {
+            angle -= beta * 0.0005;
+            yaw = THREE.MathUtils.degToRad(alpha);
+            pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
+          } else {
+            angle -= gamma * 0.0005;
+            yaw = THREE.MathUtils.degToRad(alpha);
+            pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
+          }
+        }
+      });
+
+      // Painel Debug listeners
+      document.getElementById("ipdSlider").oninput = e => ipd = parseFloat(e.target.value);
+      document.getElementById("offsetSlider").oninput = e => eyeOffsetX = parseFloat(e.target.value);
+      document.getElementById("convSlider").oninput = e => convergence = parseFloat(e.target.value);
+      document.getElementById("kSlider").oninput = e => lensK = parseFloat(e.target.value);
     }
 
-    function onResize(){
+    function onResize() {
       renderer.setSize(window.innerWidth, window.innerHeight);
+      const w = Math.max(1, Math.floor(window.innerWidth / 2));
+      const h = Math.max(1, window.innerHeight);
       headCam.aspect = window.innerWidth / window.innerHeight;
       headCam.updateProjectionMatrix();
-      leftCam.aspect = rightCam.aspect = 0.5 * window.innerWidth / window.innerHeight;
+      leftCam.aspect  = w / h;
+      rightCam.aspect = w / h;
       leftCam.updateProjectionMatrix();
       rightCam.updateProjectionMatrix();
-      rtLeft.setSize(Math.floor(window.innerWidth/2), window.innerHeight);
-      rtRight.setSize(Math.floor(window.innerWidth/2), window.innerHeight);
+    }
+
+    function createCountdownText(text) {
+      if (countdownMesh) scene.remove(countdownMesh);
+      const geo = new THREE.PlaneGeometry(2, 1);
+      const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      countdownMesh = new THREE.Mesh(geo, mat);
+      countdownMesh.position.set(0, 2, -3);
+      scene.add(countdownMesh);
+    }
+
+    function startCountdown() {
+      setTimeout(() => createCountdownText("3"), 1000);
+      setTimeout(() => createCountdownText("2"), 2000);
+      setTimeout(() => createCountdownText("1"), 3000);
+      setTimeout(() => createCountdownText("Equilibre-se"), 4000);
+      setTimeout(() => { if (countdownMesh) scene.remove(countdownMesh); gameReady = true; }, 5000);
     }
 
     function updateStereoCameras() {
       headCam.rotation.set(pitch, yaw, angle);
-      const forward = new THREE.Vector3();
-      headCam.getWorldDirection(forward).normalize();
-      const up = new THREE.Vector3(0,1,0).applyQuaternion(headCam.quaternion);
-      const right = new THREE.Vector3().crossVectors(forward, up).normalize().multiplyScalar(-1);
-
-      leftCam.position.copy(headCam.position).addScaledVector(right, -ipd/2 + eyeOffsetX).addScaledVector(up, eyeOffsetY);
-      rightCam.position.copy(headCam.position).addScaledVector(right, ipd/2 + eyeOffsetX).addScaledVector(up, eyeOffsetY);
-
+      const right = new THREE.Vector3(1,0,0).applyQuaternion(headCam.quaternion);
+      leftCam.position.copy(headCam.position).addScaledVector(right, -(ipd/2) + eyeOffsetX);
+      rightCam.position.copy(headCam.position).addScaledVector(right, (ipd/2) + eyeOffsetX);
       leftCam.quaternion.copy(headCam.quaternion);
       rightCam.quaternion.copy(headCam.quaternion);
-
       leftCam.rotation.y += convergence;
       rightCam.rotation.y -= convergence;
-
-      leftCam.fov = fov;
-      rightCam.fov = fov;
-      leftCam.updateProjectionMatrix();
-      rightCam.updateProjectionMatrix();
     }
 
     function update(dt) {
-      if (!gameReady) { updateStereoCameras(); return; }
+      if (!gameReady || gameOverFlag) { updateStereoCameras(); return; }
+      driftTimer -= dt;
+      if (driftTimer <= 0) { driftTimer = 1 + Math.random() * 1.5; driftTarget = (Math.random() * 2 - 1) * 1.2; }
+      drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
+      let control = (keys.a?-1:0) + (keys.d?1:0);
+      angVel += (drift * 0.5 + control * baseControlPower) * dt;
+      angVel *= Math.pow(damping, dt * 60);
+      angle += angVel * dt;
+      headCam.position.z -= 2 * dt;
+      progress = Math.min(1, progress + baseSpeed * dt);
+      fillEl.style.width = (progress * 100).toFixed(1) + '%';
+      statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : 'Equilibre-se';
+      if (Math.abs(angle) > maxAngle) return gameOver(false);
+      if (progress >= 1) return gameOver(true);
       updateStereoCameras();
+      document.getElementById("debugValues").innerText =
+        `IPD: ${ipd.toFixed(3)}\nOffsetX: ${eyeOffsetX.toFixed(3)}\nConv: ${convergence.toFixed(3)}\nK: ${lensK.toFixed(2)}`;
     }
 
     let last = performance.now();
@@ -215,12 +254,19 @@
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       update(dt);
-      renderer.setRenderTarget(rtLeft);
+      const w = Math.max(1, Math.floor(window.innerWidth / 2));
+      const h = Math.max(1, window.innerHeight);
+      renderer.setViewport(0, 0, w, h);
+      renderer.setScissor(0, 0, w, h);
       renderer.render(scene, leftCam);
-      renderer.setRenderTarget(rtRight);
+      renderer.setViewport(w, 0, w, h);
+      renderer.setScissor(w, 0, w, h);
       renderer.render(scene, rightCam);
-      renderer.setRenderTarget(null);
-      renderer.render(postScene, postCam);
+    }
+
+    function gameOver(win) {
+      gameOverFlag = true;
+      console.log(win ? "Você conseguiu!" : "Você caiu!");
     }
   })();
   </script>

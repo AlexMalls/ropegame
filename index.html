@@ -28,7 +28,7 @@
   <div id="overlay">
     <div id="panel">
       <h1>Balanço na Corda 3D — VR Box</h1>
-      <p>Render estereoscópico com correção simples de lente.<br>
+      <p>Tela dividida por olho usando viewports (sem sobreposição).<br>
       Use <b>A</b> e <b>D</b> no PC ou mova o celular para se equilibrar.<br>
       Olhar ao redor: <b>mouse</b> (PC) ou <b>giroscópio</b> (celular).</p>
       <button id="play">Jogar</button>
@@ -42,20 +42,14 @@
   (() => {
     // ====== Parâmetros VR ======
     let stereoEnabled = true;
-    let ipd = 0.064;              // distância entre olhos (em unidades do mundo)
-    let eyeDistance = ipd * 0.5;  // metade para cada lado
-    // Correção de lente simples (barrel). Ajuste k para sua lente (0.10..0.30)
-    const lensK = 0.18;
+    let ipd = 0.064;               // distância entre olhos (em unidades do mundo, ~metros)
+    let eyeDistance = ipd * 0.5;   // metade para cada lado
     // ===========================
 
     let scene, renderer;
     let headCam;                 // câmera "central" (cabeça)
     let leftCam, rightCam;       // câmeras dos olhos
     let rope, floor;
-
-    // pós-processamento: render targets para cada olho
-    let rtLeft, rtRight;
-    let postScene, postCam, leftQuad, rightQuad, leftMat, rightMat;
 
     // jogo
     let angle = 0, angVel = 0;
@@ -113,12 +107,17 @@
       headCam = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 1000);
       headCam.position.set(0, 1.6, 5);
 
-      leftCam  = new THREE.PerspectiveCamera(headCam.fov, 0.5 * window.innerWidth / window.innerHeight, headCam.near, headCam.far);
-      rightCam = new THREE.PerspectiveCamera(headCam.fov, 0.5 * window.innerWidth / window.innerHeight, headCam.near, headCam.far);
+      // Aspects por olho serão metade da largura
+      const w = Math.max(1, Math.floor(window.innerWidth / 2));
+      const h = Math.max(1, window.innerHeight);
 
-      renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });
+      leftCam  = new THREE.PerspectiveCamera(headCam.fov, w / h, headCam.near, headCam.far);
+      rightCam = new THREE.PerspectiveCamera(headCam.fov, w / h, headCam.near, headCam.far);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setScissorTest(true); // importantíssimo para dividir a tela
       document.body.appendChild(renderer.domElement);
 
       const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
@@ -136,79 +135,6 @@
       const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
       rope = new THREE.Mesh(ropeGeo, ropeMat);
       scene.add(rope);
-
-      // ===== Render targets por olho =====
-      const rtOpts = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat };
-      rtLeft  = new THREE.WebGLRenderTarget(Math.floor(window.innerWidth/2), window.innerHeight, rtOpts);
-      rtRight = new THREE.WebGLRenderTarget(Math.floor(window.innerWidth/2), window.innerHeight, rtOpts);
-
-      // ===== Cena de pós-processamento (2 quads com shader de distorção) =====
-      postScene = new THREE.Scene();
-      postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-
-      const quadGeo = new THREE.PlaneGeometry(1, 1); // cobrimos verticalmente; ajustamos por posição/escala
-
-      const lensShader = {
-        uniforms: {
-          map: { value: null },
-          k: { value: lensK },
-          aspect: { value: window.innerWidth / window.innerHeight }
-        },
-        vertexShader: `
-          varying vec2 vUv;
-          void main(){
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          uniform sampler2D map;
-          uniform float k;
-          uniform float aspect;
-          varying vec2 vUv;
-
-          // corrige barrel simples
-          vec2 barrel(vec2 uv){
-            // uv 0..1 -> -1..1
-            vec2 p = uv * 2.0 - 1.0;
-            p.x *= aspect; // compensar aspect para deformar circularmente
-            float r2 = dot(p, p);
-            vec2 p2 = p * (1.0 + k * r2);
-            p2.x /= aspect;
-            vec2 uv2 = (p2 + 1.0) * 0.5;
-            return uv2;
-          }
-
-          void main(){
-            vec2 uv2 = barrel(vUv);
-            if(any(bvec2(uv2.x < 0.0, uv2.y < 0.0)) || any(bvec2(uv2.x > 1.0, uv2.y > 1.0))){
-              discard; // fora -> preto/transparente
-            }
-            gl_FragColor = texture2D(map, uv2);
-          }
-        `
-      };
-
-      leftMat  = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.clone(lensShader.uniforms), vertexShader: lensShader.vertexShader, fragmentShader: lensShader.fragmentShader, transparent: true });
-      rightMat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.clone(lensShader.uniforms), vertexShader: lensShader.vertexShader, fragmentShader: lensShader.fragmentShader, transparent: true });
-
-      // quads: esquerda e direita
-      leftQuad  = new THREE.Mesh(quadGeo, leftMat);
-      rightQuad = new THREE.Mesh(quadGeo, rightMat);
-
-      // posiciona quads: cada um ocupa meia tela em NDC
-      // Escala no X para ocupar metade; posiciona X no centro da metade
-      leftQuad.position.set(-0.5, 0.0, 0.0);
-      rightQuad.position.set(0.5, 0.0, 0.0);
-
-      leftQuad.scale.set(1.3, 2, 1.0);
-      rightQuad.scale.set(1.3, 2, 1.0);
-
-      postScene.add(leftQuad);
-      postScene.add(rightQuad);
-
-      leftMat.uniforms.map.value  = rtLeft.texture;
-      rightMat.uniforms.map.value = rtRight.texture;
 
       // eventos
       window.addEventListener('resize', onResize);
@@ -279,20 +205,17 @@
 
     function onResize(){
       renderer.setSize(window.innerWidth, window.innerHeight);
+
+      const w = Math.max(1, Math.floor(window.innerWidth / 2));
+      const h = Math.max(1, window.innerHeight);
+
       headCam.aspect = window.innerWidth / window.innerHeight;
       headCam.updateProjectionMatrix();
 
-      leftCam.aspect  = 0.5 * window.innerWidth / window.innerHeight;
-      rightCam.aspect = 0.5 * window.innerWidth / window.innerHeight;
+      leftCam.aspect  = w / h;
+      rightCam.aspect = w / h;
       leftCam.updateProjectionMatrix();
       rightCam.updateProjectionMatrix();
-
-      rtLeft.setSize(Math.floor(window.innerWidth/2), window.innerHeight);
-      rtRight.setSize(Math.floor(window.innerWidth/2), window.innerHeight);
-
-      // atualizar aspect no shader
-      leftMat.uniforms.aspect.value  = window.innerWidth / window.innerHeight;
-      rightMat.uniforms.aspect.value = window.innerWidth / window.innerHeight;
     }
 
     // ======= UI 3D via Canvas (acentos ok) =======
@@ -497,23 +420,24 @@
       update(dt);
 
       if (!stereoEnabled) {
-        // fallback: render único (sem VR)
-        renderer.setRenderTarget(null);
+        renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+        renderer.setScissor(0, 0, window.innerWidth, window.innerHeight);
         renderer.render(scene, headCam);
         return;
       }
 
-      // Render cena por olho para seus RTs
-      renderer.setRenderTarget(rtLeft);
+      const w = Math.max(1, Math.floor(window.innerWidth / 2));
+      const h = Math.max(1, window.innerHeight);
+
+      // olho esquerdo (metade esquerda)
+      renderer.setViewport(0, 0, w, h);
+      renderer.setScissor(0, 0, w, h);
       renderer.render(scene, leftCam);
 
-      renderer.setRenderTarget(rtRight);
+      // olho direito (metade direita)
+      renderer.setViewport(w, 0, w, h);
+      renderer.setScissor(w, 0, w, h);
       renderer.render(scene, rightCam);
-
-      // Desenha quads com correção de lente por olho
-      renderer.setRenderTarget(null);
-      renderer.clear();
-      renderer.render(postScene, postCam);
     }
 
     function gameOver(win) {

@@ -5,9 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Balanço na Corda 3D</title>
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; background: black; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: black; font-family: system-ui, sans-serif; }
     canvas { display: block; }
-    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; font-family: sans-serif; text-align: center; }
+    #hud { position: fixed; top: 0; left: 0; right: 0; padding: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
+    .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
+    .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
+    .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; }
+    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; }
     #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; }
     button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
@@ -15,29 +19,41 @@
   </style>
 </head>
 <body>
+  <div id="hud">
+    <div class="chip">Use A/D ou mova o celular</div>
+    <div class="bar"><div class="fill" id="fill"></div></div>
+    <div class="chip" id="status">Pronto</div>
+  </div>
+
   <div id="overlay">
     <div id="panel">
       <h1>Balanço na Corda 3D</h1>
       <p>Você está em uma corda suspensa sobre um desfiladeiro. O movimento para frente é automático.<br>
-      Incline-se para equilibrar: use <b>A</b> e <b>D</b> no PC ou mova o celular para os lados (giroscópio).</p>
+      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.</p>
       <button id="play">Jogar</button>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-
   <script>
   (() => {
     let scene, camera, renderer, rope, floor;
     let angle = 0, angVel = 0;
-    const maxAngle = 0.5; // rad
+    const maxAngle = 0.5;
     const damping = 0.985;
     const baseControlPower = 1.5;
+    let drift = 0, driftTarget = 0, driftTimer = 0;
 
     const keys = { a: false, d: false };
 
     const overlay = document.getElementById('overlay');
     const playBtn = document.getElementById('play');
+    const fillEl = document.getElementById('fill');
+    const statusEl = document.getElementById('status');
+
+    let progress = 0;
+    let baseSpeed = 0.1;
+    let gameOverFlag = false;
 
     playBtn.onclick = start;
 
@@ -49,7 +65,6 @@
 
     function init() {
       scene = new THREE.Scene();
-
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
       camera.position.set(0, 1.6, 5);
 
@@ -57,12 +72,9 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(renderer.domElement);
 
-      // Luz
       const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-      light.position.set(0, 200, 0);
       scene.add(light);
 
-      // Chão (lava)
       const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
       const floorMat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
       floor = new THREE.Mesh(floorGeo, floorMat);
@@ -70,7 +82,6 @@
       floor.position.y = -5;
       scene.add(floor);
 
-      // Corda (um box longo e fino)
       const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
       const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
       rope = new THREE.Mesh(ropeGeo, ropeMat);
@@ -82,42 +93,44 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
       });
 
-      // Controles PC
       addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
       addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
-      // Giroscópio mobile
       window.addEventListener('deviceorientation', (e) => {
         if (e.gamma) {
-          angle = THREE.MathUtils.clamp(e.gamma * 0.02, -maxAngle, maxAngle);
+          angle += e.gamma * 0.0005;
         }
       });
     }
 
     function update(dt) {
+      driftTimer -= dt;
+      if (driftTimer <= 0) {
+        driftTimer = 1 + Math.random() * 1.5;
+        driftTarget = (Math.random() * 2 - 1) * 1.2;
+      }
+      drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
+
       let control = 0;
-      if (keys.a) control += 1; // invertido
+      if (keys.a) control += 1;
       if (keys.d) control -= 1;
 
-      angVel += control * baseControlPower * dt;
+      angVel += (drift * 0.5 + control * baseControlPower) * dt;
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
-      angle = THREE.MathUtils.clamp(angle, -maxAngle, maxAngle);
 
-      // Inclina câmera
       camera.rotation.z = angle;
-
-      // Move para frente
       camera.position.z -= 2 * dt;
 
-      // Perde se passar limite
-      if (Math.abs(angle) >= maxAngle) {
-        gameOver();
-      }
+      progress = Math.min(1, progress + baseSpeed * dt);
+      fillEl.style.width = (progress * 100).toFixed(1) + '%';
+      statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : 'Equilibre-se';
+
+      if (Math.abs(angle) > maxAngle) return gameOver(false);
+      if (progress >= 1) return gameOver(true);
     }
 
     let last = performance.now();
-    let gameOverFlag = false;
     function animate() {
       if (gameOverFlag) return;
       requestAnimationFrame(animate);
@@ -129,10 +142,12 @@
       renderer.render(scene, camera);
     }
 
-    function gameOver() {
+    function gameOver(win) {
       gameOverFlag = true;
       overlay.hidden = false;
-      document.getElementById('panel').innerHTML = '<h1>Você caiu!</h1><p>Excedeu o ângulo crítico e caiu na lava.</p><button onclick="location.reload()">Recomeçar</button>';
+      document.getElementById('panel').innerHTML = win
+        ? '<h1>Você conseguiu!</h1><p>Chegou ao fim da corda.</p><button onclick="location.reload()">Recomeçar</button>'
+        : '<h1>Você caiu!</h1><p>Perdeu o equilíbrio e caiu na lava.</p><button onclick="location.reload()">Recomeçar</button>';
     }
   })();
   </script>

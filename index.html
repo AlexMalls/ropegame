@@ -146,7 +146,7 @@
         if (!calibrationDone) {
           calibrationSamples.push(currentPitch);
         
-          if (calibrationSamples.length >= 30) {
+          if (calibrationSamples.length >= 15) {
             let sumPitch = 0;
             calibrationSamples.forEach(p => sumPitch += p);
             pitchOffset = sumPitch / calibrationSamples.length;
@@ -216,4 +216,5 @@
   </script>
 </body>
 </html>
+
 

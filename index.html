@@ -129,18 +129,14 @@
 
         if (Math.abs(orientation) === 90) {
           // Landscape
-          // usa beta para equilíbrio
-          angle -= beta * 0.0005;
-          // usa alpha/gamma para visão
+          angle -= beta * 0.0005; // equilíbrio
           yaw = THREE.MathUtils.degToRad(alpha);
-          pitch = THREE.MathUtils.degToRad(gamma) * 0.5;
+          pitch = -THREE.MathUtils.degToRad(gamma) * 0.5; // invertido para ficar natural
         } else {
           // Portrait
-          // usa gamma para equilíbrio
-          angle -= gamma * 0.0005;
-          // usa alpha/beta para visão
+          angle -= gamma * 0.0005; // equilíbrio
           yaw = THREE.MathUtils.degToRad(alpha);
-          pitch = THREE.MathUtils.degToRad(beta) * 0.5;
+          pitch = -THREE.MathUtils.degToRad(beta) * 0.5; // invertido para ficar natural
         }
         pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
       });

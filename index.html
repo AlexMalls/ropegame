@@ -29,7 +29,8 @@
     <div id="panel">
       <h1>Balanço na Corda 3D</h1>
       <p>Você está em uma corda suspensa sobre um desfiladeiro. O movimento para frente é automático.<br>
-      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.</p>
+      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.<br>
+      Agora você também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
       <button id="play">Jogar</button>
     </div>
   </div>
@@ -52,8 +53,14 @@
     const statusEl = document.getElementById('status');
 
     let progress = 0;
-    let baseSpeed = 0.05; // mais devagar -> mais tempo de jogo
+    let baseSpeed = 0.05;
     let gameOverFlag = false;
+
+    // controle de câmera
+    let yaw = 0;   // esquerda/direita
+    let pitch = 0; // cima/baixo
+    let sensitivity = 0.002;
+    let pointerLocked = false;
 
     playBtn.onclick = start;
 
@@ -96,18 +103,46 @@
       addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
       addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
-      // Giroscópio com detecção automática de orientação
+      // Mouse look
+      document.body.addEventListener('click', () => {
+        if (!pointerLocked) {
+          renderer.domElement.requestPointerLock();
+        }
+      });
+      document.addEventListener('pointerlockchange', () => {
+        pointerLocked = document.pointerLockElement === renderer.domElement;
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (pointerLocked) {
+          yaw -= e.movementX * sensitivity;
+          pitch -= e.movementY * sensitivity;
+          pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+        }
+      });
+
+      // Giroscópio: separa visão (yaw/pitch) do equilíbrio (roll)
       window.addEventListener('deviceorientation', (e) => {
         const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-        let tilt = 0;
+        let gamma = e.gamma || 0; // inclinação lateral
+        let beta = e.beta || 0;   // frente/trás
+        let alpha = e.alpha || 0; // bússola
+
         if (Math.abs(orientation) === 90) {
-          // Landscape -> usa beta
-          tilt = e.beta || 0;
+          // Landscape
+          // usa beta para equilíbrio
+          angle -= beta * 0.0005;
+          // usa alpha/gamma para visão
+          yaw = THREE.MathUtils.degToRad(alpha);
+          pitch = THREE.MathUtils.degToRad(gamma) * 0.5;
         } else {
-          // Portrait -> usa gamma
-          tilt = e.gamma || 0;
+          // Portrait
+          // usa gamma para equilíbrio
+          angle -= gamma * 0.0005;
+          // usa alpha/beta para visão
+          yaw = THREE.MathUtils.degToRad(alpha);
+          pitch = THREE.MathUtils.degToRad(beta) * 0.5;
         }
-        angle -= tilt * 0.0005; // invertido para ficar natural
+        pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
       });
     }
 
@@ -120,14 +155,16 @@
       drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
 
       let control = 0;
-      if (keys.a) control -= 1; // invertido
-      if (keys.d) control += 1; // invertido
+      if (keys.a) control -= 1;
+      if (keys.d) control += 1;
 
       angVel += (drift * 0.5 + control * baseControlPower) * dt;
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
 
-      camera.rotation.z = angle;
+      // aplica rotação da câmera (pitch, yaw, roll)
+      camera.rotation.set(pitch, yaw, angle);
+
       camera.position.z -= 2 * dt;
 
       progress = Math.min(1, progress + baseSpeed * dt);

@@ -16,6 +16,21 @@
     button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
     [hidden] { display: none !important; }
+
+    /* HUD debug */
+    #debug {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #0f0;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      display: none;
+      white-space: pre;
+    }
   </style>
 </head>
 <body>
@@ -28,12 +43,16 @@
   <div id="overlay">
     <div id="panel">
       <h1>Balanço na Corda 3D</h1>
-      <p>Você está em uma corda suspensa sobre um desfiladeiro. O movimento para frente é automático.<br>
-      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.<br>
-      Agora você também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
+      <p>Você está em uma corda suspensa sobre um desfiladeiro.<br>
+      O movimento para frente é automático — use <b>A</b> e <b>D</b> ou mova o celular para se equilibrar.<br>
+      Também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
       <button id="play">Jogar</button>
+      <button id="calibrate">Calibragem</button>
+      <button id="back" hidden>Voltar</button>
     </div>
   </div>
+
+  <div id="debug"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
@@ -49,12 +68,16 @@
 
     const overlay = document.getElementById('overlay');
     const playBtn = document.getElementById('play');
+    const calibrateBtn = document.getElementById('calibrate');
+    const backBtn = document.getElementById('back');
     const fillEl = document.getElementById('fill');
     const statusEl = document.getElementById('status');
+    const debugEl = document.getElementById('debug');
 
     let progress = 0;
     let baseSpeed = 0.05;
     let gameOverFlag = false;
+    let isCalibrating = false;
 
     // controle de câmera
     let yaw = 0;
@@ -65,108 +88,134 @@
     // calibração automática (média inicial)
     let calibrationSamples = [];
     let calibrationDone = false;
-    let yawOffset = 0;
     let pitchOffset = 0;
 
-    playBtn.onclick = start;
+    playBtn.onclick = () => start(false);
+    calibrateBtn.onclick = () => start(true);
+    backBtn.onclick = backToMenu;
 
-    function start() {
+    function start(calibrateMode) {
       overlay.hidden = true;
+      isCalibrating = calibrateMode;
+      gameOverFlag = false;
+      progress = 0;
+      angle = 0; angVel = 0;
 
-      // tenta entrar em fullscreen (mobile)
-      if (document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen();
-      } else if (document.documentElement.webkitRequestFullscreen) {
-        document.documentElement.webkitRequestFullscreen();
+      if (isCalibrating) {
+        debugEl.style.display = 'block';
+        backBtn.hidden = false;
+        playBtn.hidden = true;
+        calibrateBtn.hidden = true;
       }
 
       init();
       animate();
     }
 
+    function backToMenu() {
+      overlay.hidden = false;
+      debugEl.style.display = 'none';
+      backBtn.hidden = true;
+      playBtn.hidden = false;
+      calibrateBtn.hidden = false;
+      gameOverFlag = true; // parar loop
+    }
+
     function init() {
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 1.6, 5);
+      if (!scene) {
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.6, 5);
 
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(renderer.domElement);
-
-      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-      scene.add(light);
-
-      const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
-      const floorMat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
-      floor = new THREE.Mesh(floorGeo, floorMat);
-      floor.rotation.x = -Math.PI / 2;
-      floor.position.y = -5;
-      scene.add(floor);
-
-      const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
-      const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
-      rope = new THREE.Mesh(ropeGeo, ropeMat);
-      scene.add(rope);
-
-      window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
+        renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-      });
+        document.body.appendChild(renderer.domElement);
 
-      addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
-      addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
+        const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
+        scene.add(light);
 
-      document.body.addEventListener('click', () => {
-        if (!pointerLocked) {
-          renderer.domElement.requestPointerLock();
-        }
-      });
-      document.addEventListener('pointerlockchange', () => {
-        pointerLocked = document.pointerLockElement === renderer.domElement;
-      });
-      document.addEventListener('mousemove', (e) => {
-        if (pointerLocked) {
-          yaw -= e.movementX * sensitivity;
-          pitch -= e.movementY * sensitivity;
-          pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
-        }
-      });
+        const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
+        const floorMat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
+        floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -5;
+        scene.add(floor);
 
-      // Giroscópio com média inicial
-      window.addEventListener('deviceorientation', (e) => {
-        const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-        let gamma = e.gamma || 0;
-        let beta = e.beta || 0;
-        let alpha = e.alpha || 0;
+        const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
+        const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
+        rope = new THREE.Mesh(ropeGeo, ropeMat);
+        scene.add(rope);
 
-        let currentYaw = THREE.MathUtils.degToRad(alpha);
-        let currentPitch = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
+        window.addEventListener('resize', () => {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+        });
 
-        if (!calibrationDone) {
-          calibrationSamples.push(currentPitch);
-        
-          if (calibrationSamples.length >= 15) {
-            let sumPitch = 0;
-            calibrationSamples.forEach(p => sumPitch += p);
-            pitchOffset = sumPitch / calibrationSamples.length;
-            calibrationDone = true;
+        addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
+        addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
+
+        document.body.addEventListener('click', () => {
+          if (!pointerLocked) {
+            renderer.domElement.requestPointerLock();
           }
-        } else {
-          if (Math.abs(orientation) === 90) {
-            angle -= beta * 0.0005;
-            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
-            pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
+        });
+        document.addEventListener('pointerlockchange', () => {
+          pointerLocked = document.pointerLockElement === renderer.domElement;
+        });
+        document.addEventListener('mousemove', (e) => {
+          if (pointerLocked) {
+            yaw -= e.movementX * sensitivity;
+            pitch -= e.movementY * sensitivity;
+            pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+          }
+        });
+
+        // Giroscópio com média inicial
+        window.addEventListener('deviceorientation', (e) => {
+          const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+          let gamma = e.gamma || 0;
+          let beta = e.beta || 0;
+          let alpha = e.alpha || 0;
+
+          let currentPitch = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
+
+          if (!calibrationDone) {
+            calibrationSamples.push(currentPitch);
+            if (calibrationSamples.length >= 15) {
+              let sumPitch = 0;
+              calibrationSamples.forEach(p => sumPitch += p);
+              pitchOffset = sumPitch / calibrationSamples.length;
+              calibrationDone = true;
+            }
           } else {
-            angle -= gamma * 0.0005;
-            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
-            pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
+            if (Math.abs(orientation) === 90) {
+              angle -= beta * 0.0005;
+              yaw = THREE.MathUtils.degToRad(alpha);
+              pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
+            } else {
+              angle -= gamma * 0.0005;
+              yaw = THREE.MathUtils.degToRad(alpha);
+              pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
+            }
           }
-        }
-      });
+        });
+      }
     }
 
     function update(dt) {
+      if (isCalibrating) {
+        // só mostra rotação, sem movimento nem game over
+        camera.rotation.set(pitch, yaw, 0);
+        camera.rotation.z = angle;
+        debugEl.textContent =
+          `Yaw:   ${yaw.toFixed(3)}\n` +
+          `Pitch: ${pitch.toFixed(3)}\n` +
+          `Roll:  ${angle.toFixed(3)}`;
+        return;
+      }
+
+      // jogo normal
       driftTimer -= dt;
       if (driftTimer <= 0) {
         driftTimer = 1 + Math.random() * 1.5;
@@ -182,13 +231,8 @@
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
 
-      // aplica yaw + pitch normalmente
       camera.rotation.set(pitch, yaw, 0);
-      
-      // aplica o equilíbrio separadamente no eixo Z
       camera.rotation.z = angle;
-      
-      // movimento automático para frente
       camera.position.z -= 2 * dt;
 
       progress = Math.min(1, progress + baseSpeed * dt);
@@ -222,7 +266,3 @@
   </script>
 </body>
 </html>
-
-
-
-

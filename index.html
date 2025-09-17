@@ -16,20 +16,6 @@
     button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
     [hidden] { display: none !important; }
-
-    #debug {
-      position: fixed;
-      top: 10px;
-      right: 10px;
-      background: rgba(0,0,0,0.7);
-      color: #0f0;
-      font-family: monospace;
-      font-size: 12px;
-      padding: 8px 12px;
-      border-radius: 6px;
-      display: none;
-      white-space: pre;
-    }
   </style>
 </head>
 <body>
@@ -42,17 +28,12 @@
   <div id="overlay">
     <div id="panel">
       <h1>Balanço na Corda 3D</h1>
-      <p>Você está em uma corda suspensa sobre um desfiladeiro.<br>
-      O movimento para frente é automático.<br>
-      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> ou mova o celular para corrigir.<br>
-      Também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
+      <p>Você está em uma corda suspensa sobre um desfiladeiro. O movimento para frente é automático.<br>
+      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.<br>
+      Agora você também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
       <button id="play">Jogar</button>
-      <button id="calibrate">Calibragem</button>
-      <button id="back" hidden>Voltar</button>
     </div>
   </div>
-
-  <div id="debug"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
@@ -68,16 +49,12 @@
 
     const overlay = document.getElementById('overlay');
     const playBtn = document.getElementById('play');
-    const calibrateBtn = document.getElementById('calibrate');
-    const backBtn = document.getElementById('back');
     const fillEl = document.getElementById('fill');
     const statusEl = document.getElementById('status');
-    const debugEl = document.getElementById('debug');
 
     let progress = 0;
     let baseSpeed = 0.05;
     let gameOverFlag = false;
-    let isCalibrating = false;
 
     // controle de câmera
     let yaw = 0;
@@ -85,35 +62,26 @@
     let sensitivity = 0.002;
     let pointerLocked = false;
 
-    playBtn.onclick = () => start(false);
-    calibrateBtn.onclick = () => start(true);
-    backBtn.onclick = backToMenu;
+    // calibração automática (média inicial)
+    let calibrationSamples = [];
+    let calibrationDone = false;
+    let yawOffset = 0;
+    let pitchOffset = 0;
 
-    function start(calibrateMode) {
+    playBtn.onclick = start;
+
+    function start() {
       overlay.hidden = true;
-      isCalibrating = calibrateMode;
-      gameOverFlag = false;
-      progress = 0;
-      angle = 0; angVel = 0;
 
-      if (isCalibrating) {
-        debugEl.style.display = 'block';
-        backBtn.hidden = false;
-        playBtn.hidden = true;
-        calibrateBtn.hidden = true;
+      // tenta entrar em fullscreen (mobile)
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen();
+      } else if (document.documentElement.webkitRequestFullscreen) {
+        document.documentElement.webkitRequestFullscreen();
       }
 
       init();
       animate();
-    }
-
-    function backToMenu() {
-      overlay.hidden = false;
-      debugEl.style.display = 'none';
-      backBtn.hidden = true;
-      playBtn.hidden = false;
-      calibrateBtn.hidden = false;
-      gameOverFlag = true;
     }
 
     function init() {
@@ -165,33 +133,40 @@
         }
       });
 
-      // Giroscópio
+      // Giroscópio com média inicial
       window.addEventListener('deviceorientation', (e) => {
-        let alpha = e.alpha || 0;
-        let beta = e.beta || 0;
+        const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
         let gamma = e.gamma || 0;
+        let beta = e.beta || 0;
+        let alpha = e.alpha || 0;
 
-        yaw = THREE.MathUtils.degToRad(alpha);
-        pitch = THREE.MathUtils.degToRad(beta) * 0.5;
+        let currentYaw = THREE.MathUtils.degToRad(alpha);
+        let currentPitch = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
 
-        if (isCalibrating) {
-          debugEl.textContent =
-            `alpha: ${alpha.toFixed(1)}°\n` +
-            `beta:  ${beta.toFixed(1)}°\n` +
-            `gamma: ${gamma.toFixed(1)}°\n\n` +
-            `yaw:   ${yaw.toFixed(3)} rad\n` +
-            `pitch: ${pitch.toFixed(3)} rad\n` +
-            `angle: ${angle.toFixed(3)} rad`;
+        if (!calibrationDone) {
+          calibrationSamples.push(currentPitch);
+        
+          if (calibrationSamples.length >= 15) {
+            let sumPitch = 0;
+            calibrationSamples.forEach(p => sumPitch += p);
+            pitchOffset = sumPitch / calibrationSamples.length;
+            calibrationDone = true;
+          }
+        } else {
+          if (Math.abs(orientation) === 90) {
+            angle -= beta * 0.0005;
+            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
+            pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
+          } else {
+            angle -= gamma * 0.0005;
+            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
+            pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
+          }
         }
       });
     }
 
     function update(dt) {
-      if (isCalibrating) {
-        camera.rotation.set(pitch, yaw, angle);
-        return;
-      }
-
       driftTimer -= dt;
       if (driftTimer <= 0) {
         driftTimer = 1 + Math.random() * 1.5;
@@ -241,3 +216,6 @@
   </script>
 </body>
 </html>
+
+
+

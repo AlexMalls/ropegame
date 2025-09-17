@@ -3,42 +3,33 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Balanço na Corda 3D (Quaternion + Deroll)</title>
+  <title>Balanço na Corda 3D</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: black; font-family: system-ui, sans-serif; }
     canvas { display: block; }
     #hud { position: fixed; top: 0; left: 0; right: 0; padding: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
     .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
-    .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; color:#eee; }
+    .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; }
     #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; }
-    #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 620px; }
+    #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; }
     button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
     [hidden] { display: none !important; }
 
-    /* HUD debug */
-    #debugWrap { position: fixed; top: 10px; right: 10px; display: none; gap: 8px; align-items: flex-start; }
     #debug {
-      background: rgba(0,0,0,0.6);
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.7);
       color: #0f0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: monospace;
       font-size: 12px;
       padding: 8px 12px;
       border-radius: 6px;
+      display: none;
       white-space: pre;
-      max-width: min(44ch, 90vw);
     }
-    #debugControls {
-      background: rgba(0,0,0,0.6);
-      color: #eee;
-      font-size: 12px;
-      padding: 8px 12px;
-      border-radius: 6px;
-    }
-    #debugControls label { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
-    #debugControls .row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
-    #debugControls .title { font-weight: 700; margin-bottom: 6px; }
   </style>
 </head>
 <body>
@@ -51,184 +42,66 @@
   <div id="overlay">
     <div id="panel">
       <h1>Balanço na Corda 3D</h1>
-      <p>Movimento para frente é automático. Equilibre com <b>A/D</b> ou inclinando o celular.<br>
-      Orientação por <b>quaternions</b>, com <b>Calibragem</b> e remoção de roll do aparelho.</p>
+      <p>Você está em uma corda suspensa sobre um desfiladeiro.<br>
+      O movimento para frente é automático.<br>
+      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> ou mova o celular para corrigir.<br>
+      Também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
       <button id="play">Jogar</button>
       <button id="calibrate">Calibragem</button>
       <button id="back" hidden>Voltar</button>
     </div>
   </div>
 
-  <!-- Debug UI -->
-  <div id="debugWrap">
-    <div id="debug"></div>
-    <div id="debugControls">
-      <div class="title">Mapeamento do Sensor</div>
-      <div class="row">
-        <label><input type="checkbox" id="swapPR"> Trocar Pitch ↔ Roll</label>
-        <label><input type="checkbox" id="invPitch"> Inverter Pitch</label>
-        <label><input type="checkbox" id="invYaw">   Inverter Yaw</label>
-        <label><input type="checkbox" id="invRoll">  Inverter Roll</label>
-      </div>
-      <div class="row" style="margin-top:8px">
-        <button id="btnRef">Definir Referência Agora</button>
-        <button id="btnResetMap">Padrão</button>
-      </div>
-      <div style="margin-top:6px; opacity:.8">As escolhas ficam salvas localmente.</div>
-    </div>
-  </div>
+  <div id="debug"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
   (() => {
-    // --- cena básica ---
     let scene, camera, renderer, rope, floor;
-
-    // física do equilíbrio
     let angle = 0, angVel = 0;
     const maxAngle = 0.5;
     const damping = 0.985;
     const baseControlPower = 1.5;
     let drift = 0, driftTarget = 0, driftTimer = 0;
 
-    // UI
     const keys = { a: false, d: false };
+
     const overlay = document.getElementById('overlay');
     const playBtn = document.getElementById('play');
     const calibrateBtn = document.getElementById('calibrate');
     const backBtn = document.getElementById('back');
     const fillEl = document.getElementById('fill');
     const statusEl = document.getElementById('status');
-    const debugWrap = document.getElementById('debugWrap');
     const debugEl = document.getElementById('debug');
-
-    // debug controls
-    const swapPRChk = document.getElementById('swapPR');
-    const invPitchChk = document.getElementById('invPitch');
-    const invYawChk = document.getElementById('invYaw');
-    const invRollChk = document.getElementById('invRoll');
-    const btnRef = document.getElementById('btnRef');
-    const btnResetMap = document.getElementById('btnResetMap');
-
 
     let progress = 0;
     let baseSpeed = 0.05;
     let gameOverFlag = false;
     let isCalibrating = false;
 
-    // mouse look (fallback desktop)
-    let yawMouse = 0, pitchMouse = 0;
+    // controle de câmera
+    let yaw = 0;
+    let pitch = 0;
     let sensitivity = 0.002;
     let pointerLocked = false;
 
-    // ---- QUATERNIONS ----
-    const qDevice = new THREE.Quaternion();  // do aparelho (após mapeamento)
-    const refInv  = new THREE.Quaternion();  // inverso da referência
-    const qLook   = new THREE.Quaternion();  // olhar final (sem roll do device)
-    const qBalance= new THREE.Quaternion();  // roll do jogo
-    const qCombined = new THREE.Quaternion();
-    const qTmp = new THREE.Quaternion();     // intermediário: refInv * qDevice
-
-    const eulerSensor = new THREE.Euler(0,0,0,'YXZ'); // só para converter sensor → quat
-    const eulerDbg    = new THREE.Euler(0,0,0,'YXZ'); // debug
-    const eulerNoRoll = new THREE.Euler(0,0,0,'YXZ'); // yaw/pitch sem roll
-
-    const fwd = new THREE.Vector3(0,0,-1);   // vetor forward canônico
-
-    let haveDeviceQuat = false;
-    let haveRef = false;
-
-    // helpers (DeviceOrientationControls base)
-    const zee = new THREE.Vector3(0,0,1);
-    const q0 = new THREE.Quaternion();
-    const q1 = new THREE.Quaternion(); // -PI/2 em X
-    q1.setFromAxisAngle(new THREE.Vector3(1,0,0), -Math.PI/2);
-
-    // --- Mapeamento de eixos (salva no localStorage) ---
-    const MAP_DEFAULT = { swapPR: true, invPitch: false, invYaw: false, invRoll: true };
-    const MAP = loadMap();
-    function loadMap(){ try{ const s=localStorage.getItem('gyroMap'); if(s) return JSON.parse(s);}catch{} return {...MAP_DEFAULT}; }
-    function saveMap(){ try{ localStorage.setItem('gyroMap', JSON.stringify(MAP)); }catch{} }
-    function syncUIFromMap(){ swapPRChk.checked=!!MAP.swapPR; invPitchChk.checked=!!MAP.invPitch; invYawChk.checked=!!MAP.invYaw; invRollChk.checked=!!MAP.invRoll; }
-    function syncMapFromUI(){ MAP.swapPR=swapPRChk.checked; MAP.invPitch=invPitchChk.checked; MAP.invYaw=invYawChk.checked; MAP.invRoll=invRollChk.checked; saveMap(); }
-
-    // Converte alpha/beta/gamma (rad) → quaternion do aparelho com mapeamento
-    function setFromDeviceOrientation(outQuat, a, b, g, orientRad) {
-      // Base three: euler.set(beta, alpha, -gamma, 'YXZ');
-      let x = b;        // pitch (beta) → eixo X
-      let y = a;        // yaw   (alpha) → eixo Y
-      let z = -g;       // roll  (gamma) → eixo Z (sinal base)
-
-      if (MAP.swapPR) { const tmp=x; x=z; z=tmp; }
-      if (MAP.invPitch) x = -x;
-      if (MAP.invYaw)   y = -y;
-      if (MAP.invRoll)  z = -z;
-
-      eulerSensor.set(x, y, z, 'YXZ');
-      outQuat.setFromEuler(eulerSensor);
-      outQuat.multiply(q1); // ajusta eixo do aparelho
-      outQuat.multiply(q0.setFromAxisAngle(zee, -orientRad)); // corrige orientação da tela
-      return outQuat;
-    }
-
-    // referência (zera orientação atual)
-    function defineReferenceNow(){ if (haveDeviceQuat){ refInv.copy(qDevice).invert(); haveRef = true; } }
-    function ensureReference(){ if (!haveRef) defineReferenceNow(); }
-
-    // monta qLook sem o roll do aparelho (deroll)
-    function buildLookQuaternion() {
-      if (haveDeviceQuat) {
-        ensureReference();
-        // qTmp = refInv * qDevice  (ordem correta!)
-        qTmp.multiplyQuaternions(refInv, qDevice);
-
-        // extrai direção "forward" e calcula yaw/pitch mantendo mundo com up=(0,1,0)
-        const dir = fwd.clone().applyQuaternion(qTmp).normalize();
-        const yaw  = Math.atan2(dir.x, -dir.z);                         // [-pi,pi]
-        const pitch= Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));    // [-pi/2,pi/2]
-
-        eulerNoRoll.set(pitch, yaw, 0, 'YXZ'); // roll sempre 0 aqui
-        qLook.setFromEuler(eulerNoRoll);
-      } else {
-        eulerNoRoll.set(pitchMouse, yawMouse, 0, 'YXZ');
-        qLook.setFromEuler(eulerNoRoll);
-      }
-      return qLook;
-    }
-
-    // UI eventos
     playBtn.onclick = () => start(false);
     calibrateBtn.onclick = () => start(true);
     backBtn.onclick = backToMenu;
-
-    btnRef.onclick = () => defineReferenceNow();
-    btnResetMap.onclick = () => { Object.assign(MAP, MAP_DEFAULT); syncUIFromMap(); saveMap(); };
-
-    swapPRChk.onchange = invPitchChk.onchange = invYawChk.onchange = invRollChk.onchange = () => { syncMapFromUI(); };
 
     function start(calibrateMode) {
       overlay.hidden = true;
       isCalibrating = calibrateMode;
       gameOverFlag = false;
-
-      // reset
       progress = 0;
       angle = 0; angVel = 0;
-      drift = 0; driftTarget = 0; driftTimer = 0;
-
-      haveRef = false;
 
       if (isCalibrating) {
-        debugWrap.style.display = 'flex';
+        debugEl.style.display = 'block';
         backBtn.hidden = false;
         playBtn.hidden = true;
         calibrateBtn.hidden = true;
-        syncUIFromMap();
       }
-
-      // iOS: pedir permissão
-      const D = window.DeviceOrientationEvent;
-      if (D && typeof D.requestPermission === 'function') { D.requestPermission().catch(()=>{}); }
 
       init();
       animate();
@@ -236,106 +109,94 @@
 
     function backToMenu() {
       overlay.hidden = false;
-      debugWrap.style.display = 'none';
+      debugEl.style.display = 'none';
       backBtn.hidden = true;
       playBtn.hidden = false;
       calibrateBtn.hidden = false;
-      gameOverFlag = true; // parar loop
+      gameOverFlag = true;
     }
 
     function init() {
-      if (!scene) {
-        scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 1.6, 5);
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 1.6, 5);
 
-        renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
+      scene.add(light);
+
+      const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
+      const floorMat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
+      floor = new THREE.Mesh(floorGeo, floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = -5;
+      scene.add(floor);
+
+      const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
+      const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
+      rope = new THREE.Mesh(ropeGeo, ropeMat);
+      scene.add(rope);
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+      });
 
-        const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-        scene.add(light);
+      addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
+      addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
-        const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
-        const floorMat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
-        floor = new THREE.Mesh(floorGeo, floorMat);
-        floor.rotation.x = -Math.PI / 2;
-        floor.position.y = -5;
-        scene.add(floor);
+      document.body.addEventListener('click', () => {
+        if (!pointerLocked) {
+          renderer.domElement.requestPointerLock();
+        }
+      });
+      document.addEventListener('pointerlockchange', () => {
+        pointerLocked = document.pointerLockElement === renderer.domElement;
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (pointerLocked) {
+          yaw -= e.movementX * sensitivity;
+          pitch -= e.movementY * sensitivity;
+          pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+        }
+      });
 
-        const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
-        const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
-        rope = new THREE.Mesh(ropeGeo, ropeMat);
-        scene.add(rope);
+      // Giroscópio
+      window.addEventListener('deviceorientation', (e) => {
+        let alpha = e.alpha || 0;
+        let beta = e.beta || 0;
+        let gamma = e.gamma || 0;
 
-        window.addEventListener('resize', () => {
-          camera.aspect = window.innerWidth / window.innerHeight;
-          camera.updateProjectionMatrix();
-          renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        yaw = THREE.MathUtils.degToRad(alpha);
+        pitch = THREE.MathUtils.degToRad(beta) * 0.5;
 
-        // teclado
-        addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
-        addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
-
-        // mouse (fallback, quando não há device)
-        document.body.addEventListener('click', () => {
-          if (!pointerLocked && renderer.domElement.requestPointerLock) renderer.domElement.requestPointerLock();
-        });
-        document.addEventListener('pointerlockchange', () => { pointerLocked = document.pointerLockElement === renderer.domElement; });
-        document.addEventListener('mousemove', (e) => {
-          if (pointerLocked && !haveDeviceQuat) {
-            yawMouse   -= e.movementX * sensitivity;
-            pitchMouse -= e.movementY * sensitivity;
-            pitchMouse = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitchMouse));
-          }
-        });
-
-        // deviceorientation → quaternion com mapeamento
-        window.addEventListener('deviceorientation', (e) => {
-          const alphaDeg = (e.alpha ?? 0);
-          const betaDeg  = (e.beta  ?? 0);
-          const gammaDeg = (e.gamma ?? 0);
-          const orientDeg = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-
-          const a = THREE.MathUtils.degToRad(alphaDeg);
-          const b = THREE.MathUtils.degToRad(betaDeg);
-          const g = THREE.MathUtils.degToRad(gammaDeg);
-          const o = THREE.MathUtils.degToRad(orientDeg || 0);
-
-          setFromDeviceOrientation(qDevice, a, b, g, o);
-          haveDeviceQuat = true;
-
-          if (isCalibrating) {
-            // debug: mostra qLook (sem roll do device) e euler derivado
-            buildLookQuaternion();
-            eulerDbg.setFromQuaternion(qLook, 'YXZ');
-            debugEl.textContent =
-              `alpha:${alphaDeg.toFixed(1)}° beta:${betaDeg.toFixed(1)}° gamma:${gammaDeg.toFixed(1)}° orient:${orientDeg}°\n` +
-              `swapPR:${MAP.swapPR} invP:${MAP.invPitch} invY:${MAP.invYaw} invR:${MAP.invRoll}\n` +
-              `qDevice:[${qDevice.x.toFixed(3)}, ${qDevice.y.toFixed(3)}, ${qDevice.z.toFixed(3)}, ${qDevice.w.toFixed(3)}]\n` +
-              `qLook:  [${qLook.x.toFixed(3)}, ${qLook.y.toFixed(3)}, ${qLook.z.toFixed(3)}, ${qLook.w.toFixed(3)}]\n` +
-              `Euler(YXZ) qLook → yaw:${eulerDbg.y.toFixed(3)} pitch:${eulerDbg.x.toFixed(3)} roll:${eulerDbg.z.toFixed(3)}\n` +
-              `Game Roll (angle): ${angle.toFixed(3)} rad`;
-          }
-        }, { passive: true });
-      }
+        if (isCalibrating) {
+          debugEl.textContent =
+            `alpha: ${alpha.toFixed(1)}°\n` +
+            `beta:  ${beta.toFixed(1)}°\n` +
+            `gamma: ${gamma.toFixed(1)}°\n\n` +
+            `yaw:   ${yaw.toFixed(3)} rad\n` +
+            `pitch: ${pitch.toFixed(3)} rad\n` +
+            `angle: ${angle.toFixed(3)} rad`;
+        }
+      });
     }
 
     function update(dt) {
-      // monta orientação de olhar (sem roll do device)
-      buildLookQuaternion();
-
       if (isCalibrating) {
-        qBalance.setFromAxisAngle(new THREE.Vector3(0,0,1), 0);
-        qCombined.multiplyQuaternions(qLook, qBalance);
-        camera.quaternion.copy(qCombined);
+        camera.rotation.set(pitch, yaw, angle);
         return;
       }
 
-      // jogo normal
       driftTimer -= dt;
-      if (driftTimer <= 0) { driftTimer = 1 + Math.random() * 1.5; driftTarget = (Math.random() * 2 - 1) * 1.2; }
+      if (driftTimer <= 0) {
+        driftTimer = 1 + Math.random() * 1.5;
+        driftTarget = (Math.random() * 2 - 1) * 1.2;
+      }
       drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
 
       let control = 0;
@@ -346,10 +207,7 @@
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
 
-      qBalance.setFromAxisAngle(new THREE.Vector3(0,0,1), angle);
-      qCombined.multiplyQuaternions(qLook, qBalance);
-      camera.quaternion.copy(qCombined);
-
+      camera.rotation.set(pitch, yaw, angle);
       camera.position.z -= 2 * dt;
 
       progress = Math.min(1, progress + baseSpeed * dt);

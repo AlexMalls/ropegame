@@ -182,7 +182,13 @@
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
 
-      camera.rotation.set(pitch, yaw, angle);
+      // aplica yaw + pitch normalmente
+      camera.rotation.set(pitch, yaw, 0);
+      
+      // aplica o equilíbrio separadamente no eixo Z
+      camera.rotation.z = angle;
+      
+      // movimento automático para frente
       camera.position.z -= 2 * dt;
 
       progress = Math.min(1, progress + baseSpeed * dt);
@@ -216,6 +222,7 @@
   </script>
 </body>
 </html>
+
 
 
 

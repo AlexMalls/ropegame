@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Balanço na Corda 3D (Quaternion + Calibragem)</title>
+  <title>Balanço na Corda 3D (Quaternion + Deroll)</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: black; font-family: system-ui, sans-serif; }
     canvas { display: block; }
@@ -51,9 +51,8 @@
   <div id="overlay">
     <div id="panel">
       <h1>Balanço na Corda 3D</h1>
-      <p>Você está em uma corda suspensa sobre um desfiladeiro.<br>
-      O movimento para frente é automático — use <b>A</b> e <b>D</b> ou mova o celular para se equilibrar.<br>
-      Agora com <b>quaternions</b> e modo de <b>Calibragem</b> para ajustar eixos.</p>
+      <p>Movimento para frente é automático. Equilibre com <b>A/D</b> ou inclinando o celular.<br>
+      Orientação por <b>quaternions</b>, com <b>Calibragem</b> e remoção de roll do aparelho.</p>
       <button id="play">Jogar</button>
       <button id="calibrate">Calibragem</button>
       <button id="back" hidden>Voltar</button>
@@ -122,90 +121,76 @@
     let pointerLocked = false;
 
     // ---- QUATERNIONS ----
-    const qDevice = new THREE.Quaternion();
-    const refInv = new THREE.Quaternion();
-    const qLook = new THREE.Quaternion();
-    const qBalance = new THREE.Quaternion();
+    const qDevice = new THREE.Quaternion();  // do aparelho (após mapeamento)
+    const refInv  = new THREE.Quaternion();  // inverso da referência
+    const qLook   = new THREE.Quaternion();  // olhar final (sem roll do device)
+    const qBalance= new THREE.Quaternion();  // roll do jogo
     const qCombined = new THREE.Quaternion();
-    const eulerDbg = new THREE.Euler(0,0,0,'YXZ'); // só debug
+    const qTmp = new THREE.Quaternion();     // intermediário: refInv * qDevice
+
+    const eulerSensor = new THREE.Euler(0,0,0,'YXZ'); // só para converter sensor → quat
+    const eulerDbg    = new THREE.Euler(0,0,0,'YXZ'); // debug
+    const eulerNoRoll = new THREE.Euler(0,0,0,'YXZ'); // yaw/pitch sem roll
+
+    const fwd = new THREE.Vector3(0,0,-1);   // vetor forward canônico
 
     let haveDeviceQuat = false;
     let haveRef = false;
 
-    // helpers de conversão (baseado em DeviceOrientationControls)
+    // helpers (DeviceOrientationControls base)
     const zee = new THREE.Vector3(0,0,1);
     const q0 = new THREE.Quaternion();
     const q1 = new THREE.Quaternion(); // -PI/2 em X
     q1.setFromAxisAngle(new THREE.Vector3(1,0,0), -Math.PI/2);
 
-    // --- Config de mapeamento de eixos (salva localmente) ---
+    // --- Mapeamento de eixos (salva no localStorage) ---
     const MAP_DEFAULT = { swapPR: true, invPitch: false, invYaw: false, invRoll: true };
     const MAP = loadMap();
+    function loadMap(){ try{ const s=localStorage.getItem('gyroMap'); if(s) return JSON.parse(s);}catch{} return {...MAP_DEFAULT}; }
+    function saveMap(){ try{ localStorage.setItem('gyroMap', JSON.stringify(MAP)); }catch{} }
+    function syncUIFromMap(){ swapPRChk.checked=!!MAP.swapPR; invPitchChk.checked=!!MAP.invPitch; invYawChk.checked=!!MAP.invYaw; invRollChk.checked=!!MAP.invRoll; }
+    function syncMapFromUI(){ MAP.swapPR=swapPRChk.checked; MAP.invPitch=invPitchChk.checked; MAP.invYaw=invYawChk.checked; MAP.invRoll=invRollChk.checked; saveMap(); }
 
-    function loadMap() {
-      try {
-        const s = localStorage.getItem('gyroMap');
-        if (s) return JSON.parse(s);
-      } catch {}
-      return { ...MAP_DEFAULT };
-    }
-    function saveMap() {
-      try { localStorage.setItem('gyroMap', JSON.stringify(MAP)); } catch {}
-    }
-    function syncUIFromMap() {
-      swapPRChk.checked = !!MAP.swapPR;
-      invPitchChk.checked = !!MAP.invPitch;
-      invYawChk.checked = !!MAP.invYaw;
-      invRollChk.checked = !!MAP.invRoll;
-    }
-    function syncMapFromUI() {
-      MAP.swapPR = swapPRChk.checked;
-      MAP.invPitch = invPitchChk.checked;
-      MAP.invYaw = invYawChk.checked;
-      MAP.invRoll = invRollChk.checked;
-      saveMap();
-    }
-
-    // Converte alpha/beta/gamma (radianos) para quaternion com mapeamento ajustável
+    // Converte alpha/beta/gamma (rad) → quaternion do aparelho com mapeamento
     function setFromDeviceOrientation(outQuat, a, b, g, orientRad) {
-      // Base do three: euler.set( beta, alpha, -gamma, 'YXZ' );
-      // Vamos permitir trocar/inverter eixos ANTES de gerar o quat:
+      // Base three: euler.set(beta, alpha, -gamma, 'YXZ');
       let x = b;        // pitch (beta) → eixo X
       let y = a;        // yaw   (alpha) → eixo Y
-      let z = -g;       // roll  (gamma) → eixo Z (note o sinal padrão)
+      let z = -g;       // roll  (gamma) → eixo Z (sinal base)
 
-      if (MAP.swapPR) { // troca Pitch <-> Roll
-        const tmp = x; x = z; z = tmp;
-      }
+      if (MAP.swapPR) { const tmp=x; x=z; z=tmp; }
       if (MAP.invPitch) x = -x;
       if (MAP.invYaw)   y = -y;
       if (MAP.invRoll)  z = -z;
 
-      eulerDbg.set(x, y, z, 'YXZ');
-      outQuat.setFromEuler(eulerDbg);
-      outQuat.multiply(q1); // ajusta eixo do aparelho -> mundo
+      eulerSensor.set(x, y, z, 'YXZ');
+      outQuat.setFromEuler(eulerSensor);
+      outQuat.multiply(q1); // ajusta eixo do aparelho
       outQuat.multiply(q0.setFromAxisAngle(zee, -orientRad)); // corrige orientação da tela
       return outQuat;
     }
 
-    // captura/invalida referência
-    function defineReferenceNow() {
-      if (haveDeviceQuat) {
-        refInv.copy(qDevice).invert();
-        haveRef = true;
-      }
-    }
-    function ensureReference() { if (!haveRef) defineReferenceNow(); }
+    // referência (zera orientação atual)
+    function defineReferenceNow(){ if (haveDeviceQuat){ refInv.copy(qDevice).invert(); haveRef = true; } }
+    function ensureReference(){ if (!haveRef) defineReferenceNow(); }
 
-    // monta qLook (prioriza device; se não houver, usa mouse)
+    // monta qLook sem o roll do aparelho (deroll)
     function buildLookQuaternion() {
       if (haveDeviceQuat) {
         ensureReference();
-        qLook.copy(qDevice);
-        if (haveRef) qLook.multiply(refInv);
+        // qTmp = refInv * qDevice  (ordem correta!)
+        qTmp.multiplyQuaternions(refInv, qDevice);
+
+        // extrai direção "forward" e calcula yaw/pitch mantendo mundo com up=(0,1,0)
+        const dir = fwd.clone().applyQuaternion(qTmp).normalize();
+        const yaw  = Math.atan2(dir.x, -dir.z);                         // [-pi,pi]
+        const pitch= Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));    // [-pi/2,pi/2]
+
+        eulerNoRoll.set(pitch, yaw, 0, 'YXZ'); // roll sempre 0 aqui
+        qLook.setFromEuler(eulerNoRoll);
       } else {
-        const e = new THREE.Euler(pitchMouse, yawMouse, 0, 'YXZ');
-        qLook.setFromEuler(e);
+        eulerNoRoll.set(pitchMouse, yawMouse, 0, 'YXZ');
+        qLook.setFromEuler(eulerNoRoll);
       }
       return qLook;
     }
@@ -215,24 +200,23 @@
     calibrateBtn.onclick = () => start(true);
     backBtn.onclick = backToMenu;
 
+    const btnRef = document.getElementById('btnRef');
+    const btnResetMap = document.getElementById('btnResetMap');
     btnRef.onclick = () => defineReferenceNow();
     btnResetMap.onclick = () => { Object.assign(MAP, MAP_DEFAULT); syncUIFromMap(); saveMap(); };
 
-    swapPRChk.onchange = invPitchChk.onchange = invYawChk.onchange = invRollChk.onchange = () => {
-      syncMapFromUI();
-    };
+    swapPRChk.onchange = invPitchChk.onchange = invYawChk.onchange = invRollChk.onchange = () => { syncMapFromUI(); };
 
     function start(calibrateMode) {
       overlay.hidden = true;
       isCalibrating = calibrateMode;
       gameOverFlag = false;
 
-      // reset de estado
+      // reset
       progress = 0;
       angle = 0; angVel = 0;
       drift = 0; driftTarget = 0; driftTimer = 0;
 
-      // reseta referência para capturar novamente ao entrar
       haveRef = false;
 
       if (isCalibrating) {
@@ -245,9 +229,7 @@
 
       // iOS: pedir permissão
       const D = window.DeviceOrientationEvent;
-      if (D && typeof D.requestPermission === 'function') {
-        D.requestPermission().catch(()=>{});
-      }
+      if (D && typeof D.requestPermission === 'function') { D.requestPermission().catch(()=>{}); }
 
       init();
       animate();
@@ -297,22 +279,20 @@
         addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
         addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
-        // mouse → pointer lock (somente se não houver device)
+        // mouse (fallback, quando não há device)
         document.body.addEventListener('click', () => {
           if (!pointerLocked && renderer.domElement.requestPointerLock) renderer.domElement.requestPointerLock();
         });
-        document.addEventListener('pointerlockchange', () => {
-          pointerLocked = document.pointerLockElement === renderer.domElement;
-        });
+        document.addEventListener('pointerlockchange', () => { pointerLocked = document.pointerLockElement === renderer.domElement; });
         document.addEventListener('mousemove', (e) => {
           if (pointerLocked && !haveDeviceQuat) {
-            yawMouse  -= e.movementX * sensitivity;
+            yawMouse   -= e.movementX * sensitivity;
             pitchMouse -= e.movementY * sensitivity;
             pitchMouse = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitchMouse));
           }
         });
 
-        // deviceorientation → quaternion estável com mapeamento configurável
+        // deviceorientation → quaternion com mapeamento
         window.addEventListener('deviceorientation', (e) => {
           const alphaDeg = (e.alpha ?? 0);
           const betaDeg  = (e.beta  ?? 0);
@@ -328,15 +308,15 @@
           haveDeviceQuat = true;
 
           if (isCalibrating) {
-            // atualiza debug
-            buildLookQuaternion(); // para exibir euler derivado do qLook
+            // debug: mostra qLook (sem roll do device) e euler derivado
+            buildLookQuaternion();
             eulerDbg.setFromQuaternion(qLook, 'YXZ');
             debugEl.textContent =
-              `alpha: ${alphaDeg.toFixed(1)}°  beta: ${betaDeg.toFixed(1)}°  gamma: ${gammaDeg.toFixed(1)}°  orient: ${orientDeg}°\n` +
+              `alpha:${alphaDeg.toFixed(1)}° beta:${betaDeg.toFixed(1)}° gamma:${gammaDeg.toFixed(1)}° orient:${orientDeg}°\n` +
               `swapPR:${MAP.swapPR} invP:${MAP.invPitch} invY:${MAP.invYaw} invR:${MAP.invRoll}\n` +
-              `qDevice: [${qDevice.x.toFixed(3)}, ${qDevice.y.toFixed(3)}, ${qDevice.z.toFixed(3)}, ${qDevice.w.toFixed(3)}]\n` +
-              `qLook:   [${qLook.x.toFixed(3)}, ${qLook.y.toFixed(3)}, ${qLook.z.toFixed(3)}, ${qLook.w.toFixed(3)}]\n` +
-              `Euler(YXZ) qLook → yaw:${eulerDbg.y.toFixed(3)}  pitch:${eulerDbg.x.toFixed(3)}  roll:${eulerDbg.z.toFixed(3)}\n` +
+              `qDevice:[${qDevice.x.toFixed(3)}, ${qDevice.y.toFixed(3)}, ${qDevice.z.toFixed(3)}, ${qDevice.w.toFixed(3)}]\n` +
+              `qLook:  [${qLook.x.toFixed(3)}, ${qLook.y.toFixed(3)}, ${qLook.z.toFixed(3)}, ${qLook.w.toFixed(3)}]\n` +
+              `Euler(YXZ) qLook → yaw:${eulerDbg.y.toFixed(3)} pitch:${eulerDbg.x.toFixed(3)} roll:${eulerDbg.z.toFixed(3)}\n` +
               `Game Roll (angle): ${angle.toFixed(3)} rad`;
           }
         }, { passive: true });
@@ -344,11 +324,10 @@
     }
 
     function update(dt) {
-      // monta orientação de olhar
+      // monta orientação de olhar (sem roll do device)
       buildLookQuaternion();
 
       if (isCalibrating) {
-        // sem drift, sem desequilíbrio, sem andar
         qBalance.setFromAxisAngle(new THREE.Vector3(0,0,1), 0);
         qCombined.multiplyQuaternions(qLook, qBalance);
         camera.quaternion.copy(qCombined);
@@ -357,10 +336,7 @@
 
       // jogo normal
       driftTimer -= dt;
-      if (driftTimer <= 0) {
-        driftTimer = 1 + Math.random() * 1.5;
-        driftTarget = (Math.random() * 2 - 1) * 1.2;
-      }
+      if (driftTimer <= 0) { driftTimer = 1 + Math.random() * 1.5; driftTarget = (Math.random() * 2 - 1) * 1.2; }
       drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
 
       let control = 0;
@@ -371,15 +347,12 @@
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
 
-      // aplica orientação: qLook (aparelho/mouse) + roll do jogo (angle)
       qBalance.setFromAxisAngle(new THREE.Vector3(0,0,1), angle);
       qCombined.multiplyQuaternions(qLook, qBalance);
       camera.quaternion.copy(qCombined);
 
-      // movimento “para frente”
       camera.position.z -= 2 * dt;
 
-      // UI
       progress = Math.min(1, progress + baseSpeed * dt);
       fillEl.style.width = (progress * 100).toFixed(1) + '%';
       statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : 'Equilibre-se';

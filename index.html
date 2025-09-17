@@ -11,11 +11,11 @@
     .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
     .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; }
-    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5); color: white; text-align: center; opacity: 1; transition: opacity 0.6s ease; }
+    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10,12,24,0.55); color: white; text-align: center; opacity: 1; transition: opacity 0.6s ease; backdrop-filter: blur(8px); }
     #overlay.fade-out { opacity: 0; pointer-events: none; }
-    #panel { background: rgba(0,0,0,0.7); padding: 20px; border-radius: 12px; max-width: 600px; }
-    button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
-    button:hover { background: #333; }
+    #panel { background: rgba(6,10,18,0.75); padding: 24px; border-radius: 16px; max-width: 600px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 18px 40px rgba(0,0,0,0.35); }
+    button { margin-top: 12px; padding: 12px 18px; background: linear-gradient(135deg, #2a4dff, #23b5ff); color: #f4f9ff; border: none; border-radius: 999px; cursor: pointer; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 10px 25px rgba(0,0,0,0.25); transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    button:hover { transform: translateY(-1px); box-shadow: 0 14px 32px rgba(0,0,0,0.3); }
     button:disabled { opacity: 0.6; cursor: default; }
     [hidden] { display: none !important; }
   </style>
@@ -40,7 +40,7 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
   (() => {
-    let scene, camera, renderer, rope, floor, timerMesh;
+    let scene, camera, renderer, rope, floor;
     let angle = 0, angVel = 0;
     const maxAngle = 0.5;
     const damping = 0.985;
@@ -55,21 +55,30 @@
     const statusEl = document.getElementById('status');
 
     let progress = 0;
-    let baseSpeed = 0.05;
+    const baseSpeed = 0.05;
     let gameOverFlag = false;
     const fadeDuration = 600;
     let startRequested = false;
+    let gameActive = false;
     let gameStarted = false;
-    let countdown = 3; // timer em segundos
-    let countdownActive = false;
+
+    const countdownSeconds = 3;
+    let countdownTimerId = null;
+    let countdownSprite;
+    let countdownTexture;
+    let countdownCanvas;
+    let countdownCtx;
+    let countdownHideTimeoutId = null;
+    let fadeTimeoutId = null;
 
     // controle de câmera
-    let yaw = 0, pitch = 0;
+    let yaw = 0;
+    let pitch = 0;
     const sensitivity = 0.002;
     let pointerLocked = false;
 
-    // calibração automática
-    let calibrationSamples = [];
+    // calibração automática (média inicial)
+    const calibrationSamples = [];
     let calibrationDone = false;
     let pitchOffset = 0;
 
@@ -77,20 +86,124 @@
       if (startRequested) return;
       startRequested = true;
       playBtn.disabled = true;
+      gameActive = false;
+      gameStarted = false;
+      statusEl.textContent = 'Prepare-se';
+      let fadeHandled = false;
 
-      const startCountdown = () => {
-        if (gameStarted) return;
+      const finalizeFade = () => {
+        if (fadeHandled) return;
+        fadeHandled = true;
         overlay.hidden = true;
         overlay.classList.remove('fade-out');
-        init();
-        createCountdown();
-        countdownActive = true;
-        animate();
+        overlay.removeEventListener('transitionend', handleFadeEnd);
+        if (fadeTimeoutId) {
+          clearTimeout(fadeTimeoutId);
+          fadeTimeoutId = null;
+        }
+        startCountdown();
       };
 
+      const handleFadeEnd = (event) => {
+        if (event.target === overlay && event.propertyName === 'opacity') {
+          finalizeFade();
+        }
+      };
+
+      fadeTimeoutId = setTimeout(finalizeFade, fadeDuration + 80);
+      overlay.addEventListener('transitionend', handleFadeEnd);
       overlay.classList.add('fade-out');
-      setTimeout(startCountdown, fadeDuration + 50);
+      attemptFullscreen();
     };
+
+    function attemptFullscreen() {
+      const element = document.documentElement;
+      const request = element.requestFullscreen || element.webkitRequestFullscreen || element.msRequestFullscreen;
+      if (request) {
+        request.call(element);
+      }
+    }
+
+    function ensureCountdownSprite() {
+      if (countdownSprite) return;
+      countdownCanvas = document.createElement('canvas');
+      countdownCanvas.width = countdownCanvas.height = 512;
+      countdownCtx = countdownCanvas.getContext('2d');
+      countdownTexture = new THREE.CanvasTexture(countdownCanvas);
+      const material = new THREE.SpriteMaterial({ map: countdownTexture, transparent: true });
+      material.depthWrite = false;
+      countdownSprite = new THREE.Sprite(material);
+      countdownSprite.scale.set(3, 3, 1);
+      countdownSprite.position.set(0, 2.4, -10);
+      countdownSprite.visible = false;
+      countdownSprite.renderOrder = 2;
+      scene.add(countdownSprite);
+    }
+
+    function updateCountdownTexture(value) {
+      ensureCountdownSprite();
+      const isNumber = typeof value === 'number';
+      const text = value.toString();
+      const size = countdownCanvas.width;
+      const center = size / 2;
+      countdownCtx.clearRect(0, 0, size, size);
+      countdownCtx.save();
+      countdownCtx.fillStyle = 'rgba(14,20,35,0.68)';
+      countdownCtx.beginPath();
+      countdownCtx.arc(center, center, size * 0.42, 0, Math.PI * 2);
+      countdownCtx.fill();
+      countdownCtx.lineWidth = size * 0.04;
+      countdownCtx.strokeStyle = 'rgba(90, 170, 255, 0.5)';
+      countdownCtx.stroke();
+      countdownCtx.fillStyle = '#f4f9ff';
+      countdownCtx.textAlign = 'center';
+      countdownCtx.textBaseline = 'middle';
+      countdownCtx.shadowColor = 'rgba(0,0,0,0.35)';
+      countdownCtx.shadowBlur = 28;
+      const fontSize = isNumber ? Math.round(size * 0.42) : Math.round(size * 0.28);
+      countdownCtx.font = `700 ${fontSize}px system-ui, sans-serif`;
+      countdownCtx.fillText(text, center, center + (isNumber ? size * 0.02 : 0));
+      countdownCtx.restore();
+      countdownTexture.needsUpdate = true;
+    }
+
+    function startCountdown() {
+      if (countdownTimerId) {
+        clearInterval(countdownTimerId);
+      }
+      if (countdownHideTimeoutId) {
+        clearTimeout(countdownHideTimeoutId);
+        countdownHideTimeoutId = null;
+      }
+      ensureCountdownSprite();
+      countdownSprite.visible = true;
+      gameStarted = false;
+      gameActive = false;
+      let current = countdownSeconds;
+      updateCountdownTexture(current);
+      countdownTimerId = setInterval(() => {
+        current -= 1;
+        if (current > 0) {
+          updateCountdownTexture(current);
+          return;
+        }
+        clearInterval(countdownTimerId);
+        countdownTimerId = null;
+        updateCountdownTexture('Vai!');
+        countdownHideTimeoutId = setTimeout(() => {
+          if (countdownSprite) countdownSprite.visible = false;
+        }, 500);
+        activateGame();
+      }, 1000);
+    }
+
+    function activateGame() {
+      if (gameStarted) return;
+      gameStarted = true;
+      gameActive = true;
+      last = performance.now();
+      statusEl.textContent = 'Equilibre-se';
+    }
 
     function init() {
       scene = new THREE.Scene();
@@ -101,7 +214,8 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(renderer.domElement);
 
-      scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
+      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
+      scene.add(light);
 
       const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
       const floorMat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
@@ -111,7 +225,8 @@
       scene.add(floor);
 
       const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
-      rope = new THREE.Mesh(ropeGeo, new THREE.MeshStandardMaterial({ color: 0xaaaaaa }));
+      const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
+      rope = new THREE.Mesh(ropeGeo, ropeMat);
       scene.add(rope);
 
       window.addEventListener('resize', () => {
@@ -120,73 +235,68 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
       });
 
-      addEventListener('keydown', e => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
-      addEventListener('keyup', e => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
+      const handleKey = (isPressed) => (event) => {
+        const key = event.key.toLowerCase();
+        if (key in keys) {
+          keys[key] = isPressed;
+        }
+      };
+      addEventListener('keydown', handleKey(true));
+      addEventListener('keyup', handleKey(false));
 
       document.body.addEventListener('click', () => {
-        if (!pointerLocked) renderer.domElement.requestPointerLock();
+        if (!pointerLocked) {
+          renderer.domElement.requestPointerLock();
+        }
       });
       document.addEventListener('pointerlockchange', () => {
         pointerLocked = document.pointerLockElement === renderer.domElement;
       });
-      document.addEventListener('mousemove', e => {
+      document.addEventListener('mousemove', (e) => {
         if (pointerLocked) {
           yaw -= e.movementX * sensitivity;
-          pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch - e.movementY * sensitivity));
+          pitch -= e.movementY * sensitivity;
+          pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
         }
       });
 
+      // Giroscópio com média inicial
       window.addEventListener('deviceorientation', (e) => {
         const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
         let gamma = e.gamma || 0;
         let beta = e.beta || 0;
         let alpha = e.alpha || 0;
 
+        let currentPitch = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
+
         if (!calibrationDone) {
-          calibrationSamples.push(beta);
+          calibrationSamples.push(currentPitch);
+        
           if (calibrationSamples.length >= 15) {
-            pitchOffset = calibrationSamples.reduce((a,b) => a+b, 0) / calibrationSamples.length;
+            let sumPitch = 0;
+            calibrationSamples.forEach(p => sumPitch += p);
+            pitchOffset = sumPitch / calibrationSamples.length;
             calibrationDone = true;
           }
         } else {
           if (Math.abs(orientation) === 90) {
             angle -= beta * 0.0005;
-            yaw = THREE.MathUtils.degToRad(alpha);
+            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
             pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
           } else {
             angle -= gamma * 0.0005;
-            yaw = THREE.MathUtils.degToRad(alpha);
+            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
             pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
           }
         }
       });
-    }
 
-    function createCountdown() {
-      const loader = new THREE.FontLoader();
-      loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', (font) => {
-        const textGeo = new THREE.TextGeometry(countdown.toString(), { font, size: 1, height: 0.2 });
-        const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        timerMesh = new THREE.Mesh(textGeo, mat);
-        timerMesh.position.set(0, 2, -5); // posição fixa no mundo
-        scene.add(timerMesh);
-
-        const interval = setInterval(() => {
-          countdown--;
-          if (countdownMesh) scene.remove(countdownMesh);
-          const newGeo = new THREE.TextGeometry(countdown > 0 ? countdown.toString() : "GO!", { font, size: 1, height: 0.2 });
-          timerMesh.geometry.dispose();
-          timerMesh.geometry = newGeo;
-          if (countdown <= 0) {
-            clearInterval(interval);
-            setTimeout(() => { scene.remove(timerMesh); countdownActive = false; gameStarted = true; }, 1000);
-          }
-        }, 1000);
-      });
+      ensureCountdownSprite();
+      countdownSprite.visible = false;
+      fillEl.style.width = '0%';
     }
 
     function update(dt) {
-      if (!gameStarted) return;
       driftTimer -= dt;
       if (driftTimer <= 0) {
         driftTimer = 1 + Math.random() * 1.5;
@@ -194,12 +304,13 @@
       }
       drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
 
-      let control = (keys.d - keys.a);
+      let control = 0;
+      if (keys.a) control -= 1;
+      if (keys.d) control += 1;
+
       angVel += (drift * 0.5 + control * baseControlPower) * dt;
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
-
-      camera.rotation.set(pitch, yaw, angle);
       camera.position.z -= 2 * dt;
 
       progress = Math.min(1, progress + baseSpeed * dt);
@@ -218,12 +329,31 @@
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
 
-      update(dt);
+      if (gameActive) {
+        update(dt);
+      }
+
+      camera.rotation.set(pitch, yaw, angle);
       renderer.render(scene, camera);
     }
 
+    init();
+    animate();
+
     function gameOver(win) {
       gameOverFlag = true;
+      gameActive = false;
+      if (countdownTimerId) {
+        clearInterval(countdownTimerId);
+        countdownTimerId = null;
+      }
+      if (countdownHideTimeoutId) {
+        clearTimeout(countdownHideTimeoutId);
+        countdownHideTimeoutId = null;
+      }
+      if (countdownSprite) {
+        countdownSprite.visible = false;
+      }
       overlay.hidden = false;
       overlay.classList.remove('fade-out');
       document.getElementById('panel').innerHTML = win

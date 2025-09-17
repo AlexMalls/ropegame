@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Balanço na Corda 3D</title>
+  <title>Balanço na Corda 3D (Babylon.js)</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: black; font-family: system-ui, sans-serif; }
-    canvas { display: block; }
+    canvas { width: 100%; height: 100%; display: block; }
     #hud { position: fixed; top: 0; left: 0; right: 0; padding: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
     .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
@@ -35,134 +35,76 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <canvas id="renderCanvas"></canvas>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
   <script>
   (() => {
-    let scene, camera, renderer, rope, floor;
-    let angle = 0, angVel = 0;
-    const maxAngle = 0.5;
-    const damping = 0.985;
-    const baseControlPower = 1.5;
-    let drift = 0, driftTarget = 0, driftTimer = 0;
-
-    const keys = { a: false, d: false };
-
+    const canvas = document.getElementById("renderCanvas");
     const overlay = document.getElementById('overlay');
     const playBtn = document.getElementById('play');
     const fillEl = document.getElementById('fill');
     const statusEl = document.getElementById('status');
 
+    let engine, scene, camera, rope, floor;
+    let angle = 0, angVel = 0;
+    const maxAngle = 0.5;
+    const damping = 0.985;
+    const baseControlPower = 1.5;
+    let drift = 0, driftTarget = 0, driftTimer = 0;
     let progress = 0;
     let baseSpeed = 0.05;
     let gameOverFlag = false;
 
-    // controle de câmera
-    let yaw = 0;
-    let pitch = 0;
-    let sensitivity = 0.002;
-    let pointerLocked = false;
-
-    // calibração automática (média inicial)
-    let calibrationSamples = [];
-    let calibrationDone = false;
-    let yawOffset = 0;
-    let pitchOffset = 0;
-
-    playBtn.onclick = start;
+    const keys = { a: false, d: false };
+    let yaw = 0, pitch = 0;
 
     function start() {
       overlay.hidden = true;
-
-      // tenta entrar em fullscreen (mobile)
-      if (document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen();
-      } else if (document.documentElement.webkitRequestFullscreen) {
-        document.documentElement.webkitRequestFullscreen();
-      }
-
       init();
-      animate();
+      engine.runRenderLoop(() => animate());
     }
 
     function init() {
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 1.6, 5);
+      engine = new BABYLON.Engine(canvas, true);
+      scene = new BABYLON.Scene(engine);
 
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(renderer.domElement);
+      camera = new BABYLON.UniversalCamera("camera", new BABYLON.Vector3(0, 1.6, 5), scene);
+      camera.attachControl(canvas, true);
+      camera.inputs.removeByType("FreeCameraKeyboardMoveInput"); // desabilita WASD padrão
 
-      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-      scene.add(light);
+      const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-      const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
-      const floorMat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
-      floor = new THREE.Mesh(floorGeo, floorMat);
-      floor.rotation.x = -Math.PI / 2;
+      // chão
+      floor = BABYLON.MeshBuilder.CreateGround("floor", {width:200, height:200}, scene);
       floor.position.y = -5;
-      scene.add(floor);
+      floor.material = new BABYLON.StandardMaterial("floorMat", scene);
+      floor.material.wireframe = true;
+      floor.material.diffuseColor = new BABYLON.Color3(1, 0.2, 0);
 
-      const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
-      const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
-      rope = new THREE.Mesh(ropeGeo, ropeMat);
-      scene.add(rope);
+      // corda
+      rope = BABYLON.MeshBuilder.CreateBox("rope", {width:0.1, height:0.05, depth:100}, scene);
+      rope.position.y = 0;
 
-      window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      });
+      // resize
+      window.addEventListener('resize', () => engine.resize());
 
+      // inputs
       addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
       addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
-      document.body.addEventListener('click', () => {
-        if (!pointerLocked) {
-          renderer.domElement.requestPointerLock();
-        }
-      });
-      document.addEventListener('pointerlockchange', () => {
-        pointerLocked = document.pointerLockElement === renderer.domElement;
-      });
-      document.addEventListener('mousemove', (e) => {
-        if (pointerLocked) {
-          yaw -= e.movementX * sensitivity;
-          pitch -= e.movementY * sensitivity;
+      // mouse movimento
+      scene.onPointerObservable.add((pointerInfo) => {
+        if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERMOVE && document.pointerLockElement) {
+          yaw -= pointerInfo.event.movementX * 0.002;
+          pitch -= pointerInfo.event.movementY * 0.002;
           pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
         }
       });
 
-      // Giroscópio com média inicial
-      window.addEventListener('deviceorientation', (e) => {
-        const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-        let gamma = e.gamma || 0;
-        let beta = e.beta || 0;
-        let alpha = e.alpha || 0;
-
-        let currentYaw = THREE.MathUtils.degToRad(alpha);
-        let currentPitch = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
-
-        if (!calibrationDone) {
-          calibrationSamples.push(currentPitch);
-        
-          if (calibrationSamples.length >= 15) {
-            let sumPitch = 0;
-            calibrationSamples.forEach(p => sumPitch += p);
-            pitchOffset = sumPitch / calibrationSamples.length;
-            calibrationDone = true;
-          }
-        } else {
-          if (Math.abs(orientation) === 90) {
-            angle -= beta * 0.0005;
-            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
-            pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
-          } else {
-            angle -= gamma * 0.0005;
-            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
-            pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
-          }
-        }
+      // pointer lock
+      canvas.addEventListener("click", () => {
+        if (!document.pointerLockElement) canvas.requestPointerLock();
       });
     }
 
@@ -182,7 +124,9 @@
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
 
-      camera.rotation.set(pitch, yaw, angle);
+      camera.rotation.x = pitch;
+      camera.rotation.y = yaw;
+      camera.rotation.z = angle;
       camera.position.z -= 2 * dt;
 
       progress = Math.min(1, progress + baseSpeed * dt);
@@ -196,13 +140,12 @@
     let last = performance.now();
     function animate() {
       if (gameOverFlag) return;
-      requestAnimationFrame(animate);
       const now = performance.now();
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
 
       update(dt);
-      renderer.render(scene, camera);
+      scene.render();
     }
 
     function gameOver(win) {
@@ -210,12 +153,11 @@
       overlay.hidden = false;
       document.getElementById('panel').innerHTML = win
         ? '<h1>Você conseguiu!</h1><p>Chegou ao fim da corda.</p><button onclick="location.reload()">Recomeçar</button>'
-        : '<h1>Você caiu!</h1><p>Perdeu o equilíbrio e caiu na lava.</p><button onclick="location.reload()">Recomeçar</button>';
+        : '<h1>Você caiu!</h1><p>Perdeu o equilíbrio e caiu.</p><button onclick="location.reload()">Recomeçar</button>';
     }
+
+    playBtn.onclick = start;
   })();
   </script>
 </body>
 </html>
-
-
-

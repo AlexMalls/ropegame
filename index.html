@@ -90,6 +90,9 @@
     let calibrationDone = false;
     let pitchOffset = 0;
 
+    // unwrap helpers
+    let prevBeta = null, prevGamma = null;
+
     playBtn.onclick = () => start(false);
     calibrateBtn.onclick = () => start(true);
     backBtn.onclick = backToMenu;
@@ -171,16 +174,34 @@
           }
         });
 
-        // Giroscópio com média inicial
+        // Giroscópio com unwrap e anti-spike
         window.addEventListener('deviceorientation', (e) => {
-          const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-          let gamma = e.gamma || 0;
-          let beta = e.beta || 0;
-          let alpha = e.alpha || 0;
+          let alpha = e.alpha ?? 0;
+          let beta  = e.beta  ?? 0; // [-180,180]
+          let gamma = e.gamma ?? 0; // [-90,90]
 
-          let currentPitch = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
+          // unwrap beta
+          if (prevBeta !== null) {
+            let db = beta - prevBeta;
+            if (db > 180)  beta -= 360;
+            if (db < -180) beta += 360;
+          }
+          prevBeta = beta;
+
+          // unwrap gamma
+          if (prevGamma !== null) {
+            let dg = gamma - prevGamma;
+            if (dg > 90)   gamma -= 180;
+            if (dg < -90)  gamma += 180;
+          }
+          prevGamma = gamma;
+
+          const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
 
           if (!calibrationDone) {
+            let currentPitch = Math.abs(orientation) === 90
+              ? THREE.MathUtils.degToRad(gamma) * 0.5
+              : THREE.MathUtils.degToRad(beta) * 0.5;
             calibrationSamples.push(currentPitch);
             if (calibrationSamples.length >= 15) {
               let sumPitch = 0;
@@ -192,12 +213,35 @@
             if (Math.abs(orientation) === 90) {
               angle -= beta * 0.0005;
               yaw = THREE.MathUtils.degToRad(alpha);
-              pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
+
+              let newPitch = -(THREE.MathUtils.degToRad(gamma * 0.5) - pitchOffset);
+              const maxStep = 1.0;
+              const d = newPitch - pitch;
+              if (d >  maxStep) newPitch = pitch + maxStep;
+              if (d < -maxStep) newPitch = pitch - maxStep;
+              pitch = newPitch;
             } else {
               angle -= gamma * 0.0005;
               yaw = THREE.MathUtils.degToRad(alpha);
-              pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
+
+              let newPitch = -(THREE.MathUtils.degToRad(beta * 0.5) - pitchOffset);
+              const maxStep = 1.0;
+              const d = newPitch - pitch;
+              if (d >  maxStep) newPitch = pitch + maxStep;
+              if (d < -maxStep) newPitch = pitch - maxStep;
+              pitch = newPitch;
             }
+          }
+
+          // atualizar debug em modo calibragem
+          if (isCalibrating) {
+            debugEl.textContent =
+              `alpha: ${alpha.toFixed(1)}\n` +
+              `beta:  ${e.beta?.toFixed(1)} (raw) / ${beta.toFixed(1)} (unwrap)\n` +
+              `gamma: ${e.gamma?.toFixed(1)} (raw) / ${gamma.toFixed(1)} (unwrap)\n\n` +
+              `Yaw:   ${yaw.toFixed(3)}\n` +
+              `Pitch: ${pitch.toFixed(3)}\n` +
+              `Roll:  ${angle.toFixed(3)}`;
           }
         });
       }
@@ -205,17 +249,11 @@
 
     function update(dt) {
       if (isCalibrating) {
-        // só mostra rotação, sem movimento nem game over
         camera.rotation.set(pitch, yaw, 0);
         camera.rotation.z = angle;
-        debugEl.textContent =
-          `Yaw:   ${yaw.toFixed(3)}\n` +
-          `Pitch: ${pitch.toFixed(3)}\n` +
-          `Roll:  ${angle.toFixed(3)}`;
         return;
       }
 
-      // jogo normal
       driftTimer -= dt;
       if (driftTimer <= 0) {
         driftTimer = 1 + Math.random() * 1.5;

@@ -11,10 +11,25 @@
     .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
     .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; }
-    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; }
-    #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; }
+    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; z-index: 5; }
+    #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; max-height: 90vh; overflow-y: auto; }
+    #calibrationPanel { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100%); padding: 18px 20px 24px; background: rgba(0,0,0,0.78); color: white; overflow-y: auto; box-shadow: -12px 0 32px rgba(0,0,0,0.45); z-index: 4; pointer-events: auto; }
+    #calibrationPanel h2 { margin-top: 0; }
+    #calibrationPanel[hidden] { display: none !important; }
     button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
+    .button-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    button.secondary { background: rgba(255,255,255,0.06); border-color: #666; color: #ddd; }
+    button.secondary:hover { background: rgba(255,255,255,0.12); }
+    .view { max-width: 100%; }
+    .view h2, .view h3 { margin-top: 0; }
+    .calibration-section { margin-top: 18px; }
+    .calibration-section:first-of-type { margin-top: 12px; }
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-top: 10px; }
+    .info { background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 8px; }
+    .info .label { font-size: 12px; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.04em; }
+    .info .value { font-size: 17px; font-weight: 600; margin-top: 2px; }
+    #sensorStatus { font-size: 12px; opacity: 0.75; margin-top: 8px; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -27,12 +42,147 @@
 
   <div id="overlay">
     <div id="panel">
-      <h1>Balanço na Corda 3D</h1>
-      <p>Você está em uma corda suspensa sobre um desfiladeiro. O movimento para frente é automático.<br>
-      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.<br>
-      Agora você também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
-      <button id="play">Jogar</button>
+      <div id="menuView" class="view">
+        <h1>Balanço na Corda 3D</h1>
+        <p>Você está em uma corda suspensa sobre um desfiladeiro. O movimento para frente é automático.<br>
+        O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.<br>
+        Agora você também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
+        <div class="button-row">
+          <button id="play">Jogar</button>
+          <button id="calibrate">Calibragem</button>
+        </div>
+      </div>
+
+      <div id="resultView" class="view" hidden>
+        <h1 id="resultTitle"></h1>
+        <p id="resultMessage"></p>
+        <div class="button-row">
+          <button id="resultRestart">Recomeçar</button>
+        </div>
+      </div>
     </div>
+  </div>
+
+  <div id="calibrationPanel" hidden>
+    <h2>Calibragem de Gimbal</h2>
+    <p>Visualize os dados dos sensores e teste o controle de câmera e equilíbrio com o giroscópio em tempo real, sem risco de queda.</p>
+    <div class="button-row" id="calibrationActions">
+      <button id="calibrationPlay">Iniciar jogo</button>
+      <button id="calibrationRecenter" class="secondary">Recalibrar referência</button>
+      <button id="calibrationBack" class="secondary">Voltar ao menu</button>
+    </div>
+    <div id="sensorStatus">Aguardando dados dos sensores...</div>
+    <button id="enableSensors" class="secondary" hidden>Habilitar sensores</button>
+
+    <section class="calibration-section">
+      <h3>Orientação do dispositivo</h3>
+      <div class="info-grid">
+        <div class="info">
+          <div class="label">Absoluto</div>
+          <div class="value" id="deviceAbsolute">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Alpha (rotação Z)</div>
+          <div class="value" id="deviceAlpha">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Beta (inclinação X)</div>
+          <div class="value" id="deviceBeta">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Gamma (inclinação Y)</div>
+          <div class="value" id="deviceGamma">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Orientação da tela</div>
+          <div class="value" id="screenOrientation">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Atualização</div>
+          <div class="value" id="deviceOrientationAge">—</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="calibration-section">
+      <h3>Movimento do dispositivo</h3>
+      <div class="info-grid">
+        <div class="info">
+          <div class="label">Acel. X (gravidade)</div>
+          <div class="value" id="accelX">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Acel. Y (gravidade)</div>
+          <div class="value" id="accelY">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Acel. Z (gravidade)</div>
+          <div class="value" id="accelZ">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Vel. angular α</div>
+          <div class="value" id="rotationAlpha">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Vel. angular β</div>
+          <div class="value" id="rotationBeta">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Vel. angular γ</div>
+          <div class="value" id="rotationGamma">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Intervalo de leitura</div>
+          <div class="value" id="motionInterval">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Atualização</div>
+          <div class="value" id="motionAge">—</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="calibration-section">
+      <h3>Estado do jogo</h3>
+      <div class="info-grid">
+        <div class="info">
+          <div class="label">Progresso</div>
+          <div class="value" id="progressValue">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Ângulo da corda</div>
+          <div class="value" id="ropeAngle">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Vel. angular</div>
+          <div class="value" id="ropeAngVel">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Yaw da câmera</div>
+          <div class="value" id="cameraYaw">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Pitch da câmera</div>
+          <div class="value" id="cameraPitch">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Roll da câmera</div>
+          <div class="value" id="cameraRoll">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Posição X</div>
+          <div class="value" id="cameraPosX">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Posição Y</div>
+          <div class="value" id="cameraPosY">—</div>
+        </div>
+        <div class="info">
+          <div class="label">Posição Z</div>
+          <div class="value" id="cameraPosZ">—</div>
+        </div>
+      </div>
+    </section>
   </div>
 
   <canvas id="renderCanvas"></canvas>
@@ -42,121 +192,641 @@
   (() => {
     const canvas = document.getElementById("renderCanvas");
     const overlay = document.getElementById('overlay');
+    const menuView = document.getElementById('menuView');
+    const resultView = document.getElementById('resultView');
+    const calibrationPanel = document.getElementById('calibrationPanel');
     const playBtn = document.getElementById('play');
+    const calibrateBtn = document.getElementById('calibrate');
+    const calibrationPlayBtn = document.getElementById('calibrationPlay');
+    const calibrationBackBtn = document.getElementById('calibrationBack');
+    const calibrationRecenterBtn = document.getElementById('calibrationRecenter');
+    const enableSensorsBtn = document.getElementById('enableSensors');
+    const sensorStatusEl = document.getElementById('sensorStatus');
+    const resultTitleEl = document.getElementById('resultTitle');
+    const resultMessageEl = document.getElementById('resultMessage');
+    const resultRestartBtn = document.getElementById('resultRestart');
     const fillEl = document.getElementById('fill');
     const statusEl = document.getElementById('status');
 
+    const calibrationElements = {
+      deviceAbsolute: document.getElementById('deviceAbsolute'),
+      deviceAlpha: document.getElementById('deviceAlpha'),
+      deviceBeta: document.getElementById('deviceBeta'),
+      deviceGamma: document.getElementById('deviceGamma'),
+      deviceOrientationAge: document.getElementById('deviceOrientationAge'),
+      screenOrientation: document.getElementById('screenOrientation'),
+      accelX: document.getElementById('accelX'),
+      accelY: document.getElementById('accelY'),
+      accelZ: document.getElementById('accelZ'),
+      rotationAlpha: document.getElementById('rotationAlpha'),
+      rotationBeta: document.getElementById('rotationBeta'),
+      rotationGamma: document.getElementById('rotationGamma'),
+      motionInterval: document.getElementById('motionInterval'),
+      motionAge: document.getElementById('motionAge'),
+      progressValue: document.getElementById('progressValue'),
+      ropeAngle: document.getElementById('ropeAngle'),
+      ropeAngVel: document.getElementById('ropeAngVel'),
+      cameraYaw: document.getElementById('cameraYaw'),
+      cameraPitch: document.getElementById('cameraPitch'),
+      cameraRoll: document.getElementById('cameraRoll'),
+      cameraPosX: document.getElementById('cameraPosX'),
+      cameraPosY: document.getElementById('cameraPosY'),
+      cameraPosZ: document.getElementById('cameraPosZ')
+    };
+
+    const keys = { a: false, d: false };
+
     let engine, scene, camera, rope, floor;
-    let angle = 0, angVel = 0;
     const maxAngle = 0.5;
     const damping = 0.985;
     const baseControlPower = 1.5;
-    let drift = 0, driftTarget = 0, driftTimer = 0;
+    const deviceBalancePower = 2.6;
+    const baseSpeed = 0.05;
+    const DEG = 180 / Math.PI;
+    const DEVICE_DATA_TIMEOUT = 750;
+
+    let yaw = 0;
+    let pitch = 0;
+    let angle = 0;
+    let angVel = 0;
+    let drift = 0;
+    let driftTarget = 0;
+    let driftTimer = 0;
     let progress = 0;
-    let baseSpeed = 0.05;
-    let gameOverFlag = false;
+    let last = performance.now();
+    let gameState = 'menu';
 
-    const keys = { a: false, d: false };
-    let yaw = 0, pitch = 0;
+    const deviceState = {
+      orientation: { alpha: null, beta: null, gamma: null, absolute: false, timestamp: null },
+      motion: {
+        acceleration: { x: null, y: null, z: null },
+        rotationRate: { alpha: null, beta: null, gamma: null },
+        interval: null,
+        timestamp: null
+      }
+    };
 
-    function start() {
-      overlay.hidden = true;
-      init();
-      engine.runRenderLoop(() => animate());
+    const deviceControl = { yaw: 0, pitch: 0, roll: 0, timestamp: 0 };
+    let orientationReference = null;
+
+    const zAxis = new BABYLON.Vector3(0, 0, 1);
+    const correctionQuaternion = new BABYLON.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+
+    let sensorStatusState = 'waiting';
+
+    function isValidNumber(value) {
+      return typeof value === 'number' && isFinite(value);
+    }
+
+    function formatDegrees(value) {
+      return isValidNumber(value) ? `${value.toFixed(1)}°` : '—';
+    }
+
+    function formatRadians(value) {
+      return isValidNumber(value) ? `${(value * DEG).toFixed(1)}°` : '—';
+    }
+
+    function formatRadiansPerSecond(value) {
+      return isValidNumber(value) ? `${(value * DEG).toFixed(1)}°/s` : '—';
+    }
+
+    function formatNumber(value, unit = '', digits = 2) {
+      return isValidNumber(value) ? `${value.toFixed(digits)}${unit}` : '—';
+    }
+
+    function formatInterval(value) {
+      return isValidNumber(value) ? `${value.toFixed(0)} ms` : '—';
+    }
+
+    function formatAge(timestamp) {
+      return isValidNumber(timestamp) ? `${Math.max(0, Date.now() - timestamp).toFixed(0)} ms` : '—';
+    }
+
+    function formatCoordinate(value) {
+      return isValidNumber(value) ? value.toFixed(2) : '—';
+    }
+
+    function setSensorStatus(state, message) {
+      sensorStatusState = state;
+      if (sensorStatusEl && message) {
+        sensorStatusEl.textContent = message;
+      }
+    }
+
+    function getScreenOrientationAngle() {
+      if (screen.orientation && isValidNumber(screen.orientation.angle)) {
+        return screen.orientation.angle;
+      }
+      if (isValidNumber(window.orientation)) {
+        return Number(window.orientation);
+      }
+      return 0;
+    }
+
+    function quaternionFromDeviceOrientation(alpha, beta, gamma, orient) {
+      const deg2rad = Math.PI / 180;
+      const quaternion = BABYLON.Quaternion.RotationYawPitchRoll(
+        (alpha || 0) * deg2rad,
+        (beta || 0) * deg2rad,
+        -(gamma || 0) * deg2rad
+      );
+      quaternion.multiplyInPlace(correctionQuaternion);
+      const orientationQuaternion = BABYLON.Quaternion.RotationAxis(zAxis, -(orient || 0) * deg2rad);
+      quaternion.multiplyInPlace(orientationQuaternion);
+      quaternion.normalize();
+      return quaternion;
+    }
+
+    function computeDeviceQuaternion() {
+      const { alpha, beta, gamma } = deviceState.orientation;
+      if (!isValidNumber(alpha) || !isValidNumber(beta) || !isValidNumber(gamma)) {
+        return null;
+      }
+      const screenAngle = getScreenOrientationAngle();
+      return quaternionFromDeviceOrientation(alpha, beta, gamma, screenAngle);
+    }
+
+    function captureOrientationReference(showMessage = false) {
+      const quaternion = computeDeviceQuaternion();
+      if (!quaternion) {
+        if (showMessage && sensorStatusEl) {
+          sensorStatusEl.textContent = 'Aponte o aparelho para frente e aguarde a leitura dos sensores.';
+        }
+        return false;
+      }
+      orientationReference = quaternion.clone();
+      deviceControl.yaw = 0;
+      deviceControl.pitch = 0;
+      deviceControl.roll = 0;
+      deviceControl.timestamp = Date.now();
+      if (showMessage) {
+        setSensorStatus('active', 'Referência central definida. Segure o aparelho firme e teste os movimentos.');
+      }
+      return true;
+    }
+
+    function hasFreshDeviceData() {
+      return Date.now() - deviceControl.timestamp < DEVICE_DATA_TIMEOUT;
+    }
+
+    function applyDeadZone(value, threshold = 0.02) {
+      return Math.abs(value) < threshold ? 0 : value;
+    }
+
+    function updateDeviceControl() {
+      const quaternion = computeDeviceQuaternion();
+      if (!quaternion) {
+        return;
+      }
+      if (!orientationReference) {
+        orientationReference = quaternion.clone();
+      }
+      const referenceInverse = new BABYLON.Quaternion(
+        -orientationReference.x,
+        -orientationReference.y,
+        -orientationReference.z,
+        orientationReference.w
+      );
+      const relative = BABYLON.Quaternion.Multiply(referenceInverse, quaternion);
+      relative.normalize();
+      const euler = relative.toEulerAngles();
+      deviceControl.pitch = euler.x;
+      deviceControl.yaw = euler.y;
+      deviceControl.roll = euler.z;
+      deviceControl.timestamp = Date.now();
+      if (sensorStatusState !== 'manual') {
+        setSensorStatus('active', 'Sensores ativos. Use "Recalibrar referência" se algo parecer fora do lugar.');
+      }
+    }
+
+    function updateCalibrationUI() {
+      if (!calibrationPanel || calibrationPanel.hidden) {
+        return;
+      }
+
+      const orientation = deviceState.orientation;
+      const motion = deviceState.motion;
+
+      const hasOrientationData =
+        isValidNumber(orientation.alpha) ||
+        isValidNumber(orientation.beta) ||
+        isValidNumber(orientation.gamma);
+
+      const hasMotionData =
+        isValidNumber(motion.acceleration.x) ||
+        isValidNumber(motion.acceleration.y) ||
+        isValidNumber(motion.acceleration.z) ||
+        isValidNumber(motion.rotationRate.alpha) ||
+        isValidNumber(motion.rotationRate.beta) ||
+        isValidNumber(motion.rotationRate.gamma);
+
+      if (calibrationElements.deviceAbsolute) {
+        calibrationElements.deviceAbsolute.textContent = hasOrientationData ? (orientation.absolute ? 'Sim' : 'Não') : '—';
+      }
+      if (calibrationElements.deviceAlpha) calibrationElements.deviceAlpha.textContent = formatDegrees(orientation.alpha);
+      if (calibrationElements.deviceBeta) calibrationElements.deviceBeta.textContent = formatDegrees(orientation.beta);
+      if (calibrationElements.deviceGamma) calibrationElements.deviceGamma.textContent = formatDegrees(orientation.gamma);
+      if (calibrationElements.deviceOrientationAge) {
+        calibrationElements.deviceOrientationAge.textContent = formatAge(orientation.timestamp);
+      }
+
+      const screenAngle = getScreenOrientationAngle();
+      if (calibrationElements.screenOrientation) {
+        calibrationElements.screenOrientation.textContent = `${screenAngle.toFixed(0)}°`;
+      }
+
+      const accel = motion.acceleration;
+      if (calibrationElements.accelX) calibrationElements.accelX.textContent = formatNumber(accel.x, ' m/s²');
+      if (calibrationElements.accelY) calibrationElements.accelY.textContent = formatNumber(accel.y, ' m/s²');
+      if (calibrationElements.accelZ) calibrationElements.accelZ.textContent = formatNumber(accel.z, ' m/s²');
+
+      const rotation = motion.rotationRate;
+      if (calibrationElements.rotationAlpha) calibrationElements.rotationAlpha.textContent = formatNumber(rotation.alpha, ' °/s', 1);
+      if (calibrationElements.rotationBeta) calibrationElements.rotationBeta.textContent = formatNumber(rotation.beta, ' °/s', 1);
+      if (calibrationElements.rotationGamma) calibrationElements.rotationGamma.textContent = formatNumber(rotation.gamma, ' °/s', 1);
+      if (calibrationElements.motionInterval) calibrationElements.motionInterval.textContent = formatInterval(motion.interval);
+      if (calibrationElements.motionAge) calibrationElements.motionAge.textContent = formatAge(motion.timestamp);
+
+      if (calibrationElements.progressValue) {
+        calibrationElements.progressValue.textContent = isValidNumber(progress) ? `${(progress * 100).toFixed(1)}%` : '—';
+      }
+      if (calibrationElements.ropeAngle) calibrationElements.ropeAngle.textContent = formatRadians(angle);
+      if (calibrationElements.ropeAngVel) calibrationElements.ropeAngVel.textContent = formatRadiansPerSecond(angVel);
+
+      const yawValue = camera ? camera.rotation.y : yaw + (hasFreshDeviceData() ? deviceControl.yaw : 0);
+      const pitchValue = camera ? camera.rotation.x : pitch + (hasFreshDeviceData() ? deviceControl.pitch : 0);
+      const rollValue = camera ? camera.rotation.z : angle;
+
+      if (calibrationElements.cameraYaw) calibrationElements.cameraYaw.textContent = formatRadians(yawValue);
+      if (calibrationElements.cameraPitch) calibrationElements.cameraPitch.textContent = formatRadians(pitchValue);
+      if (calibrationElements.cameraRoll) calibrationElements.cameraRoll.textContent = formatRadians(rollValue);
+
+      if (calibrationElements.cameraPosX) {
+        calibrationElements.cameraPosX.textContent = camera ? formatCoordinate(camera.position.x) : '—';
+      }
+      if (calibrationElements.cameraPosY) {
+        calibrationElements.cameraPosY.textContent = camera ? formatCoordinate(camera.position.y) : '—';
+      }
+      if (calibrationElements.cameraPosZ) {
+        calibrationElements.cameraPosZ.textContent = camera ? formatCoordinate(camera.position.z) : '—';
+      }
+
+      if ((hasOrientationData || hasMotionData) && sensorStatusState === 'waiting') {
+        setSensorStatus('active', 'Sensores ativos. Recalibre a referência quando precisar.');
+      }
+    }
+
+    function requestSensorsPermission() {
+      if (!enableSensorsBtn) return;
+
+      const orientationPermission =
+        typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function';
+      const motionPermission =
+        typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function';
+
+      const messages = [];
+      const requests = [];
+
+      if (orientationPermission) {
+        requests.push(
+          DeviceOrientationEvent.requestPermission()
+            .then((result) => messages.push(`Orientação: ${result}`))
+            .catch((error) => messages.push(`Orientação: erro (${error.message || error})`))
+        );
+      }
+
+      if (motionPermission) {
+        requests.push(
+          DeviceMotionEvent.requestPermission()
+            .then((result) => messages.push(`Movimento: ${result}`))
+            .catch((error) => messages.push(`Movimento: erro (${error.message || error})`))
+        );
+      }
+
+      if (requests.length === 0) {
+        messages.push('Este dispositivo não requer permissão manual para os sensores.');
+        setSensorStatus('manual', messages.join(' '));
+        return;
+      }
+
+      Promise.all(requests).then(() => {
+        setSensorStatus('manual', messages.join(' '));
+      });
+    }
+
+    function handleDeviceOrientation(event) {
+      deviceState.orientation.alpha = isValidNumber(event.alpha) ? event.alpha : null;
+      deviceState.orientation.beta = isValidNumber(event.beta) ? event.beta : null;
+      deviceState.orientation.gamma = isValidNumber(event.gamma) ? event.gamma : null;
+      deviceState.orientation.absolute = !!event.absolute;
+      deviceState.orientation.timestamp = Date.now();
+      updateDeviceControl();
+    }
+
+    function handleDeviceMotion(event) {
+      const accelerationSource = event.accelerationIncludingGravity || event.acceleration || {};
+      deviceState.motion.acceleration.x = isValidNumber(accelerationSource.x) ? accelerationSource.x : null;
+      deviceState.motion.acceleration.y = isValidNumber(accelerationSource.y) ? accelerationSource.y : null;
+      deviceState.motion.acceleration.z = isValidNumber(accelerationSource.z) ? accelerationSource.z : null;
+
+      const rotationSource = event.rotationRate || {};
+      deviceState.motion.rotationRate.alpha = isValidNumber(rotationSource.alpha) ? rotationSource.alpha : null;
+      deviceState.motion.rotationRate.beta = isValidNumber(rotationSource.beta) ? rotationSource.beta : null;
+      deviceState.motion.rotationRate.gamma = isValidNumber(rotationSource.gamma) ? rotationSource.gamma : null;
+
+      deviceState.motion.interval = isValidNumber(event.interval) ? event.interval : null;
+      deviceState.motion.timestamp = Date.now();
+    }
+
+    function ensureEngine() {
+      if (!engine) {
+        init();
+        engine.runRenderLoop(animate);
+      }
     }
 
     function init() {
       engine = new BABYLON.Engine(canvas, true);
       scene = new BABYLON.Scene(engine);
 
-      camera = new BABYLON.UniversalCamera("camera", new BABYLON.Vector3(0, 1.6, 5), scene);
+      camera = new BABYLON.UniversalCamera('camera', new BABYLON.Vector3(0, 1.6, 5), scene);
       camera.attachControl(canvas, true);
-      camera.inputs.removeByType("FreeCameraKeyboardMoveInput"); // desabilita WASD padrão
+      camera.inputs.removeByType('FreeCameraKeyboardMoveInput');
 
-      const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+      const light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
+      light.intensity = 0.9;
 
-      // chão
-      floor = BABYLON.MeshBuilder.CreateGround("floor", {width:200, height:200}, scene);
+      floor = BABYLON.MeshBuilder.CreateGround('floor', { width: 200, height: 200 }, scene);
       floor.position.y = -5;
-      floor.material = new BABYLON.StandardMaterial("floorMat", scene);
+      floor.material = new BABYLON.StandardMaterial('floorMat', scene);
       floor.material.wireframe = true;
       floor.material.diffuseColor = new BABYLON.Color3(1, 0.2, 0);
 
-      // corda
-      rope = BABYLON.MeshBuilder.CreateBox("rope", {width:0.1, height:0.05, depth:100}, scene);
+      rope = BABYLON.MeshBuilder.CreateBox('rope', { width: 0.1, height: 0.05, depth: 100 }, scene);
       rope.position.y = 0;
 
-      // resize
       window.addEventListener('resize', () => engine.resize());
 
-      // inputs
-      addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
-      addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
+      window.addEventListener('keydown', (event) => {
+        if (event.key === 'a' || event.key === 'A') keys.a = true;
+        if (event.key === 'd' || event.key === 'D') keys.d = true;
+      });
 
-      // mouse movimento
+      window.addEventListener('keyup', (event) => {
+        if (event.key === 'a' || event.key === 'A') keys.a = false;
+        if (event.key === 'd' || event.key === 'D') keys.d = false;
+      });
+
       scene.onPointerObservable.add((pointerInfo) => {
-        if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERMOVE && document.pointerLockElement) {
+        if (
+          pointerInfo.type === BABYLON.PointerEventTypes.POINTERMOVE &&
+          document.pointerLockElement === canvas &&
+          gameState === 'playing'
+        ) {
           yaw -= pointerInfo.event.movementX * 0.002;
           pitch -= pointerInfo.event.movementY * 0.002;
-          pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+          pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
         }
       });
 
-      // pointer lock
-      canvas.addEventListener("click", () => {
-        if (!document.pointerLockElement) canvas.requestPointerLock();
+      canvas.addEventListener('click', () => {
+        if (gameState === 'playing' && !document.pointerLockElement) {
+          canvas.requestPointerLock();
+        }
       });
     }
 
-    function update(dt) {
-      driftTimer -= dt;
-      if (driftTimer <= 0) {
-        driftTimer = 1 + Math.random() * 1.5;
-        driftTarget = (Math.random() * 2 - 1) * 1.2;
+    function resetGameState() {
+      angle = 0;
+      angVel = 0;
+      drift = 0;
+      driftTarget = 0;
+      driftTimer = 1.5;
+      progress = 0;
+      yaw = 0;
+      pitch = 0;
+      last = performance.now();
+
+      if (camera) {
+        camera.position.x = 0;
+        camera.position.y = 1.6;
+        camera.position.z = 5;
+        camera.rotation.x = 0;
+        camera.rotation.y = 0;
+        camera.rotation.z = 0;
       }
-      drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
+
+      if (rope) {
+        rope.rotation.x = 0;
+        rope.rotation.y = 0;
+        rope.rotation.z = 0;
+      }
+
+      if (fillEl) fillEl.style.width = '0%';
+      if (statusEl) statusEl.textContent = 'Pronto';
+    }
+
+    function setState(nextState) {
+      gameState = nextState;
+
+      if (overlay) {
+        overlay.hidden = !(nextState === 'menu' || nextState === 'result');
+      }
+
+      if (menuView) menuView.hidden = nextState !== 'menu';
+      if (resultView) resultView.hidden = nextState !== 'result';
+      if (calibrationPanel) calibrationPanel.hidden = nextState !== 'calibration';
+
+      if (nextState === 'menu') {
+        if (statusEl) statusEl.textContent = 'Pronto';
+        if (fillEl) fillEl.style.width = '0%';
+      } else if (nextState === 'playing') {
+        if (statusEl) statusEl.textContent = 'Equilibre-se';
+      } else if (nextState === 'calibration') {
+        if (statusEl) statusEl.textContent = 'Modo de calibragem';
+        if (sensorStatusState === 'waiting') {
+          setSensorStatus('waiting', 'Aguardando dados dos sensores...');
+        }
+        updateCalibrationUI();
+      }
+
+      if (nextState !== 'playing' && document.pointerLockElement) {
+        document.exitPointerLock();
+      }
+    }
+
+    function startGame() {
+      ensureEngine();
+      resetGameState();
+      captureOrientationReference();
+      setState('playing');
+    }
+
+    function enterCalibration() {
+      ensureEngine();
+      resetGameState();
+      captureOrientationReference();
+      setState('calibration');
+    }
+
+    function returnToMenu() {
+      setState('menu');
+    }
+
+    function update(dt) {
+      const calibrating = gameState === 'calibration';
+      const playing = gameState === 'playing';
+
+      if (!calibrating && !playing) return;
+
+      if (calibrating) {
+        drift = 0;
+        driftTarget = 0;
+        driftTimer = 1;
+      } else {
+        driftTimer -= dt;
+        if (driftTimer <= 0) {
+          driftTimer = 1 + Math.random() * 1.5;
+          driftTarget = (Math.random() * 2 - 1) * 1.2;
+        }
+        drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
+      }
 
       let control = 0;
       if (keys.a) control -= 1;
       if (keys.d) control += 1;
 
-      angVel += (drift * 0.5 + control * baseControlPower) * dt;
-      angVel *= Math.pow(damping, dt * 60);
+      if (hasFreshDeviceData()) {
+        const roll = applyDeadZone(deviceControl.roll, 0.02);
+        const limitedRoll = Math.max(-1.2, Math.min(1.2, roll));
+        control += limitedRoll * deviceBalancePower;
+      }
+
+      const driftContribution = calibrating ? 0 : drift * 0.5;
+      angVel += (driftContribution + control * baseControlPower) * dt;
+
+      const currentDamping = calibrating ? 0.995 : damping;
+      angVel *= Math.pow(currentDamping, dt * 60);
       angle += angVel * dt;
 
-      camera.rotation.x = pitch;
-      camera.rotation.y = yaw;
-      camera.rotation.z = angle;
-      camera.position.z -= 2 * dt;
+      if (calibrating) {
+        angle = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, angle));
+      }
 
-      progress = Math.min(1, progress + baseSpeed * dt);
-      fillEl.style.width = (progress * 100).toFixed(1) + '%';
-      statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : 'Equilibre-se';
+      const orientationYaw = hasFreshDeviceData() ? deviceControl.yaw : 0;
+      const orientationPitch = hasFreshDeviceData() ? deviceControl.pitch : 0;
 
-      if (Math.abs(angle) > maxAngle) return gameOver(false);
-      if (progress >= 1) return gameOver(true);
+      const finalYaw = yaw + orientationYaw;
+      const finalPitch = Math.max(-1.35, Math.min(1.35, pitch + orientationPitch));
+      const finalRoll = angle;
+
+      if (camera) {
+        camera.rotation.x = finalPitch;
+        camera.rotation.y = finalYaw;
+        camera.rotation.z = finalRoll;
+        if (playing) {
+          camera.position.z -= 2 * dt;
+        }
+      }
+
+      if (rope) {
+        rope.rotation.z = angle;
+      }
+
+      if (playing) {
+        progress = Math.min(1, progress + baseSpeed * dt);
+        if (fillEl) fillEl.style.width = (progress * 100).toFixed(1) + '%';
+        if (statusEl) statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : 'Equilibre-se';
+
+        if (Math.abs(angle) > maxAngle) {
+          gameOver(false);
+          return;
+        }
+
+        if (progress >= 1) {
+          gameOver(true);
+          return;
+        }
+      } else if (calibrating) {
+        progress = 0;
+        if (fillEl) fillEl.style.width = '0%';
+      }
     }
 
-    let last = performance.now();
     function animate() {
-      if (gameOverFlag) return;
       const now = performance.now();
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
 
-      update(dt);
-      scene.render();
+      if (gameState === 'playing' || gameState === 'calibration') {
+        update(dt);
+      }
+
+      if (scene) {
+        scene.render();
+      }
+
+      if (calibrationPanel && !calibrationPanel.hidden) {
+        updateCalibrationUI();
+      }
     }
 
     function gameOver(win) {
-      gameOverFlag = true;
-      overlay.hidden = false;
-      document.getElementById('panel').innerHTML = win
-        ? '<h1>Você conseguiu!</h1><p>Chegou ao fim da corda.</p><button onclick="location.reload()">Recomeçar</button>'
-        : '<h1>Você caiu!</h1><p>Perdeu o equilíbrio e caiu.</p><button onclick="location.reload()">Recomeçar</button>';
+      if (gameState !== 'playing') return;
+      setState('result');
+      if (resultTitleEl) resultTitleEl.textContent = win ? 'Você conseguiu!' : 'Você caiu!';
+      if (resultMessageEl) {
+        resultMessageEl.textContent = win ? 'Chegou ao fim da corda.' : 'Perdeu o equilíbrio e caiu.';
+      }
+      if (statusEl) statusEl.textContent = win ? 'Vitória!' : 'Fim de jogo';
     }
 
-    playBtn.onclick = start;
+    if (typeof window !== 'undefined') {
+      window.addEventListener('deviceorientation', handleDeviceOrientation);
+      window.addEventListener('devicemotion', handleDeviceMotion);
+      window.addEventListener('orientationchange', () => {
+        orientationReference = null;
+      });
+    }
+
+    const sensorsSupported =
+      typeof DeviceOrientationEvent !== 'undefined' || typeof DeviceMotionEvent !== 'undefined';
+
+    if (!sensorsSupported) {
+      setSensorStatus('unsupported', 'Sensores de movimento não são suportados neste navegador.');
+    } else {
+      setSensorStatus('waiting', 'Aguardando dados dos sensores...');
+    }
+
+    if (enableSensorsBtn) {
+      const needsOrientationPermission =
+        typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function';
+      const needsMotionPermission =
+        typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function';
+      if (needsOrientationPermission || needsMotionPermission) {
+        enableSensorsBtn.hidden = false;
+        enableSensorsBtn.addEventListener('click', requestSensorsPermission);
+      }
+    }
+
+    if (playBtn) playBtn.addEventListener('click', startGame);
+    if (calibrateBtn) calibrateBtn.addEventListener('click', enterCalibration);
+    if (calibrationPlayBtn) calibrationPlayBtn.addEventListener('click', startGame);
+    if (calibrationBackBtn) calibrationBackBtn.addEventListener('click', returnToMenu);
+    if (calibrationRecenterBtn) {
+      calibrationRecenterBtn.addEventListener('click', () => {
+        if (!captureOrientationReference(true)) {
+          setSensorStatus('waiting', 'Referência pendente. Mantenha o aparelho estável e tente novamente.');
+        }
+      });
+    }
+    if (resultRestartBtn) resultRestartBtn.addEventListener('click', startGame);
+
+    setState('menu');
   })();
   </script>
 </body>

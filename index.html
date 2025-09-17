@@ -2,31 +2,40 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Debug Giroscópio</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Debug Giroscópio (mapeamento fix landscape)</title>
   <style>
-    body { background:#0b0f14; color:#e2e8f0; font-family:system-ui; margin:0; padding:10px; }
-    button { margin:4px; padding:8px 14px; border:1px solid #334; background:#223; color:#eee; border-radius:6px; }
-    .scene { width:200px; height:200px; margin:20px auto; perspective:800px; }
-    #cube { width:200px; height:200px; position:relative; transform-style:preserve-3d; transition:transform 0.1s linear; }
+    body { background:#0b0f14; color:#e2e8f0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif; margin:0; padding:12px; }
+    button { margin:4px 6px 8px 0; padding:9px 14px; border:1px solid #334; background:#223; color:#eee; border-radius:8px; }
+    label { margin-left:8px; font-size:14px; color:#9fb0c4; }
+    .scene { width:260px; height:260px; margin:16px auto; perspective:900px; }
+    #cube { width:260px; height:260px; position:relative; transform-style:preserve-3d; will-change:transform; }
     .face {
-      position:absolute; width:200px; height:200px; border:2px solid #666;
-      background:rgba(100,150,250,0.2); color:#fff; font-weight:bold;
-      display:flex; align-items:center; justify-content:center; font-size:20px;
+      position:absolute; width:260px; height:260px; border:2px solid #567;
+      background:linear-gradient(180deg,#182538,#0f1b2b); color:#fff; font-weight:700; font-size:20px;
+      display:flex; align-items:center; justify-content:center; border-radius:12px;
+      backface-visibility:hidden; /* <- evita ver a face “de costas” */
     }
-    .front { transform:translateZ(100px); }
-    .back { transform:rotateY(180deg) translateZ(100px); }
-    .right { transform:rotateY(90deg) translateZ(100px); }
-    .left { transform:rotateY(-90deg) translateZ(100px); }
-    .top { transform:rotateX(90deg) translateZ(100px); }
-    .bottom { transform:rotateX(-90deg) translateZ(100px); }
-    #log { white-space:pre; font:12px/1.4 monospace; background:#111; padding:8px; border:1px solid #333; margin-top:12px; max-height:40vh; overflow:auto; }
+    .front  { transform:translateZ(130px); }
+    .back   { transform:rotateY(180deg) translateZ(130px); }
+    .right  { transform:rotateY( 90deg) translateZ(130px); }
+    .left   { transform:rotateY(-90deg) translateZ(130px); }
+    .top    { transform:rotateX( 90deg) translateZ(130px); }
+    .bottom { transform:rotateX(-90deg) translateZ(130px); }
+    #log { white-space:pre; font:12px/1.45 monospace; background:#0d1117; padding:10px; border:1px solid #2a3444; border-radius:8px; margin-top:12px; max-height:45vh; overflow:auto; }
+    .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   </style>
 </head>
 <body>
-  <button id="btnStart">Iniciar</button>
-  <button id="btnStop">Stop</button>
-  <button id="btnCalibrate">Calibrar neutro</button>
+  <div class="row">
+    <button id="btnStart">Iniciar</button>
+    <button id="btnStop">Stop</button>
+    <button id="btnCalibrate">Calibrar neutro</button>
+    <label><input type="checkbox" id="lockOri" checked> Travar orientação no início</label>
+    <label><input type="checkbox" id="invertX"> Inverter X (pitch)</label>
+    <label><input type="checkbox" id="invertY"> Inverter Y (roll)</label>
+  </div>
+
   <div class="scene">
     <div id="cube">
       <div class="face front">FRENTE</div>
@@ -37,102 +46,145 @@
       <div class="face bottom">BAIXO</div>
     </div>
   </div>
+
   <div id="log"></div>
 
 <script>
-(()=>{
-  const cube=document.getElementById("cube");
-  const logEl=document.getElementById("log");
-  const btnStart=document.getElementById("btnStart");
-  const btnStop=document.getElementById("btnStop");
-  const btnCal=document.getElementById("btnCalibrate");
+(()=> {
+  const cube = document.getElementById("cube");
+  const logEl = document.getElementById("log");
+  const btnStart = document.getElementById("btnStart");
+  const btnStop = document.getElementById("btnStop");
+  const btnCal = document.getElementById("btnCalibrate");
+  const lockOriCb = document.getElementById("lockOri");
+  const invertXCb = document.getElementById("invertX");
+  const invertYCb = document.getElementById("invertY");
 
-  let started=false, offsets={pitch:0,roll:0}, lastAngles={alpha:0,beta:0,gamma:0};
-  let raf=0, intervalId=0;
+  let started = false;
+  let offsets = { pitch:0, roll:0 };
+  let lastAngles = { alpha:0, beta:0, gamma:0 };
+  let raf = 0, intervalId = 0;
+  let lockedAngle = null;
+
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const nrm = ang => ((ang % 360) + 360) % 360;
 
   function getScreenAngle(){
-    const o=screen.orientation||screen.msOrientation;
-    return o&&typeof o.angle==="number"?o.angle:(window.orientation||0);
+    const o = screen.orientation || screen.msOrientation;
+    return (o && typeof o.angle === "number") ? o.angle : (window.orientation || 0);
   }
 
-  function getOrientationName() {
-    const ang = getScreenAngle();
-    if (ang===0) return "Portrait (normal)";
-    if (ang===180) return "Portrait (de cabeça pra baixo)";
-    if (ang===90) return "Landscape (botões à direita)";
-    if (ang===270) return "Landscape (botões à esquerda)";
-    return "Desconhecido";
+  function getOrientationName(a) {
+    a = nrm(a);
+    if (a===0) return "Portrait (normal)";
+    if (a===180) return "Portrait (invertido)";
+    if (a===90) return "Landscape (botões à direita)";
+    if (a===270) return "Landscape (botões à esquerda)";
+    return `Desconhecido (${a}°)`;
   }
 
-  function map(alpha,beta,gamma){
-    const ang=((getScreenAngle()%360)+360)%360;
-    let pitch,roll;
-    if(ang===0){ pitch=beta; roll=gamma; }
-    else if(ang===90){ pitch=gamma; roll=-beta; }
-    else if(ang===180){ pitch=-beta; roll=-gamma; }
-    else if(ang===270){ pitch=-gamma; roll=beta; }
-    else { pitch=beta; roll=gamma; }
-    return {pitch,roll,screenAngle:ang};
+  // Mapeamento corrigido:
+  // - Portrait:    pitch=beta,  roll=gamma
+  // - Portrait180: pitch=-beta, roll=-gamma
+  // - Landscape90: pitch=-beta, roll= gamma   (FIX: lateral usa gamma)
+  // - Landscape270:pitch= beta, roll=-gamma   (FIX simétrico)
+  function map(alpha, beta, gamma) {
+    const cur = nrm( lockedAngle!=null ? lockedAngle : getScreenAngle() );
+    let pitch, roll;
+    if (cur === 0) {          // Portrait
+      pitch = beta;  roll = gamma;
+    } else if (cur === 180) { // Portrait invertido
+      pitch = -beta; roll = -gamma;
+    } else if (cur === 90) {  // Landscape primary (btns à direita)
+      pitch = -beta; roll =  gamma;   // ← FIX PRINCIPAL
+    } else if (cur === 270) { // Landscape secondary
+      pitch =  beta; roll = -gamma;   // ← FIX SIMÉTRICO
+    } else {
+      pitch = beta; roll = gamma;
+    }
+    // Inversões manuais, se marcadas
+    if (invertXCb.checked) pitch = -pitch;
+    if (invertYCb.checked) roll  = -roll;
+
+    return { pitch, roll, screenAngle: cur };
   }
 
   function onOrientation(e){
-    lastAngles={
-      alpha:e.alpha||0,
-      beta:e.beta||0,
-      gamma:e.gamma||0
+    lastAngles = {
+      alpha: typeof e.alpha === 'number' ? e.alpha : 0,
+      beta:  typeof e.beta  === 'number' ? e.beta  : 0,
+      gamma: typeof e.gamma === 'number' ? e.gamma : 0
     };
   }
 
+  function applyTransform(pitchDeg, rollDeg) {
+    // Limites pra evitar flip exagerado (ajuste se quiser)
+    const p = clamp(pitchDeg, -85, 85);
+    const r = clamp(rollDeg, -110, 110);
+    cube.style.transform = `rotateX(${p}deg) rotateY(${r}deg)`;
+  }
+
   function tick(){
-    const {alpha,beta,gamma}=lastAngles;
-    const m=map(alpha,beta,gamma);
-    const pitch=m.pitch-offsets.pitch;
-    const roll=m.roll-offsets.roll;
-    cube.style.transform=`rotateX(${pitch}deg) rotateY(${roll}deg)`;
-    raf=requestAnimationFrame(tick);
+    const {alpha, beta, gamma} = lastAngles;
+    const m = map(alpha, beta, gamma);
+    const pitch = m.pitch - offsets.pitch;
+    const roll  = m.roll  - offsets.roll;
+    applyTransform(pitch, roll);
+    raf = requestAnimationFrame(tick);
   }
 
   function start(){
-    if(started) return;
-    started=true;
-    logEl.textContent+=`>>> Iniciado. Orientação inicial: ${getOrientationName()}\n`;
-    window.addEventListener("deviceorientation",onOrientation,{passive:true});
-    raf=requestAnimationFrame(tick);
+    if (started) return;
+    started = true;
 
-    intervalId=setInterval(()=>{
-      const {alpha,beta,gamma}=lastAngles;
-      const m=map(alpha,beta,gamma);
-      const pitch=m.pitch-offsets.pitch;
-      const roll=m.roll-offsets.roll;
-      logEl.textContent+=
-        `t=${Date.now()%1e6}\n`+
-        `raw: α=${alpha.toFixed(1)} β=${beta.toFixed(1)} γ=${gamma.toFixed(1)}\n`+
-        `mapped: pitch=${m.pitch.toFixed(1)} roll=${m.roll.toFixed(1)} screenAngle=${m.screenAngle}\n`+
-        `offsets: pitch0=${offsets.pitch.toFixed(1)} roll0=${offsets.roll.toFixed(1)}\n`+
+    lockedAngle = lockOriCb.checked ? nrm(getScreenAngle()) : null;
+    logEl.textContent += `>>> Iniciado. Orientação inicial: ${getOrientationName(lockedAngle ?? getScreenAngle())}\n`;
+
+    window.addEventListener("deviceorientation", onOrientation, { passive: true });
+    raf = requestAnimationFrame(tick);
+
+    clearInterval(intervalId);
+    intervalId = setInterval(()=>{
+      const {alpha,beta,gamma} = lastAngles;
+      const m = map(alpha,beta,gamma);
+      const pitch = (m.pitch - offsets.pitch);
+      const roll  = (m.roll  - offsets.roll);
+      logEl.textContent +=
+        `t=${Date.now()%1e6}\n` +
+        `raw: α=${alpha.toFixed(1)} β=${beta.toFixed(1)} γ=${gamma.toFixed(1)}\n` +
+        `mapped: pitch=${m.pitch.toFixed(1)} roll=${m.roll.toFixed(1)} screenAngle=${m.screenAngle}\n` +
+        `offsets: pitch0=${offsets.pitch.toFixed(1)} roll0=${offsets.roll.toFixed(1)}\n` +
         `applied: pitch=${pitch.toFixed(1)} roll=${roll.toFixed(1)}\n---\n`;
-      logEl.scrollTop=logEl.scrollHeight;
-    },1000);
+      logEl.scrollTop = logEl.scrollHeight;
+    }, 1000);
   }
 
   function stop(){
-    if(!started) return;
-    started=false;
+    if (!started) return;
+    started = false;
     cancelAnimationFrame(raf);
     clearInterval(intervalId);
-    window.removeEventListener("deviceorientation",onOrientation);
-    logEl.textContent+=">>> Parado\n";
+    window.removeEventListener("deviceorientation", onOrientation);
+    logEl.textContent += ">>> Parado\n";
   }
 
   function calibrate(){
-    const m=map(lastAngles.alpha,lastAngles.beta,lastAngles.gamma);
-    offsets.pitch=m.pitch;
-    offsets.roll=m.roll;
-    logEl.textContent+=">>> Calibrado\n";
+    const {alpha,beta,gamma} = lastAngles;
+    const m = map(alpha,beta,gamma);
+    offsets.pitch = m.pitch;
+    offsets.roll  = m.roll;
+    logEl.textContent += ">>> Calibrado\n";
   }
 
-  btnStart.addEventListener("click",start);
-  btnStop.addEventListener("click",stop);
-  btnCal.addEventListener("click",calibrate);
+  btnStart.addEventListener("click", start);
+  btnStop.addEventListener("click", stop);
+  btnCal.addEventListener("click", calibrate);
+
+  // Opcional: avisar se a orientação do SO mudar (não re-mapeia se travado)
+  window.addEventListener("orientationchange", () => {
+    const a = getScreenAngle();
+    logEl.textContent += `>>> orientationchange → ${getOrientationName(a)}\n`;
+  }, { passive: true });
 })();
 </script>
 </body>

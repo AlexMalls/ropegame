@@ -11,9 +11,9 @@
     .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
     .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; }
-    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; opacity: 1; transition: opacity 0.6s ease; }
+    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5); color: white; text-align: center; opacity: 1; transition: opacity 0.6s ease; }
     #overlay.fade-out { opacity: 0; pointer-events: none; }
-    #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; }
+    #panel { background: rgba(0,0,0,0.7); padding: 20px; border-radius: 12px; max-width: 600px; }
     button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
     button:disabled { opacity: 0.6; cursor: default; }
@@ -40,7 +40,7 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
   (() => {
-    let scene, camera, renderer, rope, floor;
+    let scene, camera, renderer, rope, floor, timerMesh;
     let angle = 0, angVel = 0;
     const maxAngle = 0.5;
     const damping = 0.985;
@@ -60,17 +60,17 @@
     const fadeDuration = 600;
     let startRequested = false;
     let gameStarted = false;
+    let countdown = 3; // timer em segundos
+    let countdownActive = false;
 
     // controle de câmera
-    let yaw = 0;
-    let pitch = 0;
-    let sensitivity = 0.002;
+    let yaw = 0, pitch = 0;
+    const sensitivity = 0.002;
     let pointerLocked = false;
 
-    // calibração automática (média inicial)
+    // calibração automática
     let calibrationSamples = [];
     let calibrationDone = false;
-    let yawOffset = 0;
     let pitchOffset = 0;
 
     playBtn.onclick = () => {
@@ -78,34 +78,18 @@
       startRequested = true;
       playBtn.disabled = true;
 
-      const startGame = () => {
+      const startCountdown = () => {
         if (gameStarted) return;
-        gameStarted = true;
-        overlay.removeEventListener('transitionend', handleFadeEnd);
         overlay.hidden = true;
         overlay.classList.remove('fade-out');
-
-        // tenta entrar em fullscreen (mobile)
-        if (document.documentElement.requestFullscreen) {
-          document.documentElement.requestFullscreen();
-        } else if (document.documentElement.webkitRequestFullscreen) {
-          document.documentElement.webkitRequestFullscreen();
-        }
-
         init();
+        createCountdown();
+        countdownActive = true;
         animate();
       };
 
-      const handleFadeEnd = (event) => {
-        if (event.target === overlay && event.propertyName === 'opacity') {
-          overlay.removeEventListener('transitionend', handleFadeEnd);
-          startGame();
-        }
-      };
-
-      overlay.addEventListener('transitionend', handleFadeEnd);
       overlay.classList.add('fade-out');
-      setTimeout(startGame, fadeDuration + 50);
+      setTimeout(startCountdown, fadeDuration + 50);
     };
 
     function init() {
@@ -117,8 +101,7 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(renderer.domElement);
 
-      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-      scene.add(light);
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
 
       const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
       const floorMat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
@@ -128,8 +111,7 @@
       scene.add(floor);
 
       const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
-      const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
-      rope = new THREE.Mesh(ropeGeo, ropeMat);
+      rope = new THREE.Mesh(ropeGeo, new THREE.MeshStandardMaterial({ color: 0xaaaaaa }));
       scene.add(rope);
 
       window.addEventListener('resize', () => {
@@ -138,59 +120,73 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
       });
 
-      addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
-      addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
+      addEventListener('keydown', e => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
+      addEventListener('keyup', e => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
       document.body.addEventListener('click', () => {
-        if (!pointerLocked) {
-          renderer.domElement.requestPointerLock();
-        }
+        if (!pointerLocked) renderer.domElement.requestPointerLock();
       });
       document.addEventListener('pointerlockchange', () => {
         pointerLocked = document.pointerLockElement === renderer.domElement;
       });
-      document.addEventListener('mousemove', (e) => {
+      document.addEventListener('mousemove', e => {
         if (pointerLocked) {
           yaw -= e.movementX * sensitivity;
-          pitch -= e.movementY * sensitivity;
-          pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+          pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch - e.movementY * sensitivity));
         }
       });
 
-      // Giroscópio com média inicial
       window.addEventListener('deviceorientation', (e) => {
         const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
         let gamma = e.gamma || 0;
         let beta = e.beta || 0;
         let alpha = e.alpha || 0;
 
-        let currentYaw = THREE.MathUtils.degToRad(alpha);
-        let currentPitch = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
-
         if (!calibrationDone) {
-          calibrationSamples.push(currentPitch);
-        
+          calibrationSamples.push(beta);
           if (calibrationSamples.length >= 15) {
-            let sumPitch = 0;
-            calibrationSamples.forEach(p => sumPitch += p);
-            pitchOffset = sumPitch / calibrationSamples.length;
+            pitchOffset = calibrationSamples.reduce((a,b) => a+b, 0) / calibrationSamples.length;
             calibrationDone = true;
           }
         } else {
           if (Math.abs(orientation) === 90) {
             angle -= beta * 0.0005;
-            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
+            yaw = THREE.MathUtils.degToRad(alpha);
             pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
           } else {
             angle -= gamma * 0.0005;
-            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
+            yaw = THREE.MathUtils.degToRad(alpha);
             pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
           }
         }
       });
     }
 
+    function createCountdown() {
+      const loader = new THREE.FontLoader();
+      loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+        const textGeo = new THREE.TextGeometry(countdown.toString(), { font, size: 1, height: 0.2 });
+        const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        timerMesh = new THREE.Mesh(textGeo, mat);
+        timerMesh.position.set(0, 2, -5); // posição fixa no mundo
+        scene.add(timerMesh);
+
+        const interval = setInterval(() => {
+          countdown--;
+          if (countdownMesh) scene.remove(countdownMesh);
+          const newGeo = new THREE.TextGeometry(countdown > 0 ? countdown.toString() : "GO!", { font, size: 1, height: 0.2 });
+          timerMesh.geometry.dispose();
+          timerMesh.geometry = newGeo;
+          if (countdown <= 0) {
+            clearInterval(interval);
+            setTimeout(() => { scene.remove(timerMesh); countdownActive = false; gameStarted = true; }, 1000);
+          }
+        }, 1000);
+      });
+    }
+
     function update(dt) {
+      if (!gameStarted) return;
       driftTimer -= dt;
       if (driftTimer <= 0) {
         driftTimer = 1 + Math.random() * 1.5;
@@ -198,10 +194,7 @@
       }
       drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
 
-      let control = 0;
-      if (keys.a) control -= 1;
-      if (keys.d) control += 1;
-
+      let control = (keys.d - keys.a);
       angVel += (drift * 0.5 + control * baseControlPower) * dt;
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
@@ -241,6 +234,3 @@
   </script>
 </body>
 </html>
-
-
-

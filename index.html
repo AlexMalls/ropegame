@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Balanço na Corda 3D — Giroscópio Corrigido</title>
+  <title>Balanço na Corda 3D — Giroscópio Ajustado</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     canvas { display: block; touch-action: none; }
@@ -30,7 +30,7 @@
 
   <div id="overlay">
     <div id="panel">
-      <h1>Balanço na Corda 3D — Giroscópio Corrigido</h1>
+      <h1>Balanço na Corda 3D — Giroscópio Ajustado</h1>
       <p>
         • PC: use <b>A</b>/<b>D</b> para equilibrar e <b>mouse</b> para olhar.<br>
         • Celular: o <b>giroscópio</b> já está ativo em 1:1. Incline lateralmente para equilibrar.
@@ -78,7 +78,8 @@
       const _alpha = THREE.MathUtils.degToRad(alpha || 0);
       const _beta  = THREE.MathUtils.degToRad(beta  || 0);
       const _gamma = THREE.MathUtils.degToRad(gamma || 0);
-      return new THREE.Euler(_beta, _alpha, _gamma, 'YXZ');
+      // Ajuste: trocar mapeamento pitch <-> roll para corrigir inversão
+      return new THREE.Euler(_gamma, _alpha, _beta, 'YXZ');
     }
 
     function updateScreenTransform() {

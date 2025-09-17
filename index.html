@@ -11,10 +11,12 @@
     .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
     .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; }
-    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; }
+    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; opacity: 1; transition: opacity 0.6s ease; }
+    #overlay.fade-out { opacity: 0; pointer-events: none; }
     #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; }
     button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
+    button:disabled { opacity: 0.6; cursor: default; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -55,6 +57,9 @@
     let progress = 0;
     let baseSpeed = 0.05;
     let gameOverFlag = false;
+    const fadeDuration = 600;
+    let startRequested = false;
+    let gameStarted = false;
 
     // controle de câmera
     let yaw = 0;
@@ -68,21 +73,40 @@
     let yawOffset = 0;
     let pitchOffset = 0;
 
-    playBtn.onclick = start;
+    playBtn.onclick = () => {
+      if (startRequested) return;
+      startRequested = true;
+      playBtn.disabled = true;
 
-    function start() {
-      overlay.hidden = true;
+      const startGame = () => {
+        if (gameStarted) return;
+        gameStarted = true;
+        overlay.removeEventListener('transitionend', handleFadeEnd);
+        overlay.hidden = true;
+        overlay.classList.remove('fade-out');
 
-      // tenta entrar em fullscreen (mobile)
-      if (document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen();
-      } else if (document.documentElement.webkitRequestFullscreen) {
-        document.documentElement.webkitRequestFullscreen();
-      }
+        // tenta entrar em fullscreen (mobile)
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen();
+        } else if (document.documentElement.webkitRequestFullscreen) {
+          document.documentElement.webkitRequestFullscreen();
+        }
 
-      init();
-      animate();
-    }
+        init();
+        animate();
+      };
+
+      const handleFadeEnd = (event) => {
+        if (event.target === overlay && event.propertyName === 'opacity') {
+          overlay.removeEventListener('transitionend', handleFadeEnd);
+          startGame();
+        }
+      };
+
+      overlay.addEventListener('transitionend', handleFadeEnd);
+      overlay.classList.add('fade-out');
+      setTimeout(startGame, fadeDuration + 50);
+    };
 
     function init() {
       scene = new THREE.Scene();
@@ -208,6 +232,7 @@
     function gameOver(win) {
       gameOverFlag = true;
       overlay.hidden = false;
+      overlay.classList.remove('fade-out');
       document.getElementById('panel').innerHTML = win
         ? '<h1>Você conseguiu!</h1><p>Chegou ao fim da corda.</p><button onclick="location.reload()">Recomeçar</button>'
         : '<h1>Você caiu!</h1><p>Perdeu o equilíbrio e caiu na lava.</p><button onclick="location.reload()">Recomeçar</button>';

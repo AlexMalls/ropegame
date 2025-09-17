@@ -12,9 +12,21 @@
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
     .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; }
     #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; }
-    #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; }
+    #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; max-height: 90vh; overflow-y: auto; }
     button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
+    #panel .button-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    button.secondary { background: rgba(255,255,255,0.06); border-color: #666; color: #ddd; }
+    button.secondary:hover { background: rgba(255,255,255,0.12); }
+    .view { max-width: 100%; }
+    .view h2, .view h3 { margin-top: 0; }
+    .calibration-section { margin-top: 18px; }
+    .calibration-section:first-of-type { margin-top: 12px; }
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-top: 10px; }
+    .info { background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 8px; }
+    .info .label { font-size: 12px; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.04em; }
+    .info .value { font-size: 17px; font-weight: 600; margin-top: 2px; }
+    #sensorStatus { font-size: 12px; opacity: 0.75; margin-top: 8px; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -27,11 +39,145 @@
 
   <div id="overlay">
     <div id="panel">
-      <h1>Balanço na Corda 3D</h1>
-      <p>Você está em uma corda suspensa sobre um desfiladeiro. O movimento para frente é automático.<br>
-      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.<br>
-      Agora você também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
-      <button id="play">Jogar</button>
+      <div id="menuView" class="view">
+        <h1>Balanço na Corda 3D</h1>
+        <p>Você está em uma corda suspensa sobre um desfiladeiro. O movimento para frente é automático.<br>
+        O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.<br>
+        Agora você também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
+        <div class="button-row">
+          <button id="play">Jogar</button>
+          <button id="calibrate">Calibragem</button>
+        </div>
+      </div>
+
+      <div id="calibrationView" class="view" hidden>
+        <h2>Calibragem de Gimbal</h2>
+        <p>Visualize em tempo real os dados dos sensores do dispositivo e os ângulos usados pelo jogo. Use essa tela para conferir se o giroscópio está respondendo corretamente.</p>
+        <div id="sensorStatus">Aguardando dados dos sensores...</div>
+        <button id="enableSensors" class="secondary" hidden>Habilitar sensores</button>
+
+        <section class="calibration-section">
+          <h3>Orientação do dispositivo</h3>
+          <div class="info-grid">
+            <div class="info">
+              <div class="label">Absoluto</div>
+              <div class="value" id="deviceAbsolute">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Alpha (rotação Z)</div>
+              <div class="value" id="deviceAlpha">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Beta (inclinação X)</div>
+              <div class="value" id="deviceBeta">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Gamma (inclinação Y)</div>
+              <div class="value" id="deviceGamma">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Orientação da tela</div>
+              <div class="value" id="screenOrientation">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Atualização</div>
+              <div class="value" id="deviceOrientationAge">—</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="calibration-section">
+          <h3>Movimento do dispositivo</h3>
+          <div class="info-grid">
+            <div class="info">
+              <div class="label">Acel. X (gravidade)</div>
+              <div class="value" id="accelX">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Acel. Y (gravidade)</div>
+              <div class="value" id="accelY">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Acel. Z (gravidade)</div>
+              <div class="value" id="accelZ">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Vel. angular α</div>
+              <div class="value" id="rotationAlpha">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Vel. angular β</div>
+              <div class="value" id="rotationBeta">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Vel. angular γ</div>
+              <div class="value" id="rotationGamma">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Intervalo de leitura</div>
+              <div class="value" id="motionInterval">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Atualização</div>
+              <div class="value" id="motionAge">—</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="calibration-section">
+          <h3>Estado do jogo</h3>
+          <div class="info-grid">
+            <div class="info">
+              <div class="label">Progresso</div>
+              <div class="value" id="progressValue">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Ângulo da corda</div>
+              <div class="value" id="ropeAngle">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Vel. angular</div>
+              <div class="value" id="ropeAngVel">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Yaw da câmera</div>
+              <div class="value" id="cameraYaw">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Pitch da câmera</div>
+              <div class="value" id="cameraPitch">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Roll da câmera</div>
+              <div class="value" id="cameraRoll">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Posição X</div>
+              <div class="value" id="cameraPosX">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Posição Y</div>
+              <div class="value" id="cameraPosY">—</div>
+            </div>
+            <div class="info">
+              <div class="label">Posição Z</div>
+              <div class="value" id="cameraPosZ">—</div>
+            </div>
+          </div>
+        </section>
+
+        <div class="button-row">
+          <button id="backToMenu" class="secondary">Voltar</button>
+        </div>
+      </div>
+
+      <div id="resultView" class="view" hidden>
+        <h1 id="resultTitle"></h1>
+        <p id="resultMessage"></p>
+        <div class="button-row">
+          <button id="resultRestart">Recomeçar</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -42,9 +188,45 @@
   (() => {
     const canvas = document.getElementById("renderCanvas");
     const overlay = document.getElementById('overlay');
+    const menuView = document.getElementById('menuView');
+    const calibrationView = document.getElementById('calibrationView');
+    const resultView = document.getElementById('resultView');
     const playBtn = document.getElementById('play');
+    const calibrateBtn = document.getElementById('calibrate');
+    const backToMenuBtn = document.getElementById('backToMenu');
+    const enableSensorsBtn = document.getElementById('enableSensors');
+    const sensorStatusEl = document.getElementById('sensorStatus');
+    const resultTitleEl = document.getElementById('resultTitle');
+    const resultMessageEl = document.getElementById('resultMessage');
+    const resultRestartBtn = document.getElementById('resultRestart');
     const fillEl = document.getElementById('fill');
     const statusEl = document.getElementById('status');
+
+    const calibrationElements = {
+      deviceAbsolute: document.getElementById('deviceAbsolute'),
+      deviceAlpha: document.getElementById('deviceAlpha'),
+      deviceBeta: document.getElementById('deviceBeta'),
+      deviceGamma: document.getElementById('deviceGamma'),
+      deviceOrientationAge: document.getElementById('deviceOrientationAge'),
+      screenOrientation: document.getElementById('screenOrientation'),
+      accelX: document.getElementById('accelX'),
+      accelY: document.getElementById('accelY'),
+      accelZ: document.getElementById('accelZ'),
+      rotationAlpha: document.getElementById('rotationAlpha'),
+      rotationBeta: document.getElementById('rotationBeta'),
+      rotationGamma: document.getElementById('rotationGamma'),
+      motionInterval: document.getElementById('motionInterval'),
+      motionAge: document.getElementById('motionAge'),
+      progressValue: document.getElementById('progressValue'),
+      ropeAngle: document.getElementById('ropeAngle'),
+      ropeAngVel: document.getElementById('ropeAngVel'),
+      cameraYaw: document.getElementById('cameraYaw'),
+      cameraPitch: document.getElementById('cameraPitch'),
+      cameraRoll: document.getElementById('cameraRoll'),
+      cameraPosX: document.getElementById('cameraPosX'),
+      cameraPosY: document.getElementById('cameraPosY'),
+      cameraPosZ: document.getElementById('cameraPosZ')
+    };
 
     let engine, scene, camera, rope, floor;
     let angle = 0, angVel = 0;
@@ -53,16 +235,248 @@
     const baseControlPower = 1.5;
     let drift = 0, driftTarget = 0, driftTimer = 0;
     let progress = 0;
-    let baseSpeed = 0.05;
+    const baseSpeed = 0.05;
     let gameOverFlag = false;
 
     const keys = { a: false, d: false };
     let yaw = 0, pitch = 0;
 
+    const DEG = 180 / Math.PI;
+
+    const deviceState = {
+      orientation: { alpha: null, beta: null, gamma: null, absolute: false, timestamp: null },
+      motion: {
+        acceleration: { x: null, y: null, z: null },
+        rotationRate: { alpha: null, beta: null, gamma: null },
+        interval: null,
+        timestamp: null
+      }
+    };
+
+    let calibrationActive = false;
+    let calibrationLoopId = null;
+    let sensorStatusState = 'auto';
+
+    function isValidNumber(value) {
+      return typeof value === 'number' && isFinite(value);
+    }
+
+    function formatDegrees(value) {
+      return isValidNumber(value) ? `${value.toFixed(1)}°` : '—';
+    }
+
+    function formatRadians(value) {
+      return isValidNumber(value) ? `${(value * DEG).toFixed(1)}°` : '—';
+    }
+
+    function formatRadiansPerSecond(value) {
+      return isValidNumber(value) ? `${(value * DEG).toFixed(1)}°/s` : '—';
+    }
+
+    function formatNumber(value, unit = '', digits = 2) {
+      return isValidNumber(value) ? `${value.toFixed(digits)}${unit}` : '—';
+    }
+
+    function formatInterval(value) {
+      return isValidNumber(value) ? `${value.toFixed(0)} ms` : '—';
+    }
+
+    function formatAge(timestamp) {
+      return isValidNumber(timestamp) ? `${Math.max(0, Date.now() - timestamp).toFixed(0)} ms` : '—';
+    }
+
+    function formatCoordinate(value) {
+      return isValidNumber(value) ? value.toFixed(2) : '—';
+    }
+
+    function showView(name) {
+      if (!menuView || !calibrationView || !resultView) return;
+
+      menuView.hidden = name !== 'menu';
+      calibrationView.hidden = name !== 'calibration';
+      resultView.hidden = name !== 'result';
+
+      const shouldRunCalibration = name === 'calibration';
+
+      if (shouldRunCalibration) {
+        calibrationActive = true;
+        updateCalibrationUI();
+        if (!calibrationLoopId) {
+          calibrationLoopId = requestAnimationFrame(calibrationLoop);
+        }
+      } else {
+        calibrationActive = false;
+        if (calibrationLoopId) {
+          cancelAnimationFrame(calibrationLoopId);
+          calibrationLoopId = null;
+        }
+      }
+    }
+
+    function calibrationLoop() {
+      if (!calibrationActive) {
+        calibrationLoopId = null;
+        return;
+      }
+      updateCalibrationUI();
+      calibrationLoopId = requestAnimationFrame(calibrationLoop);
+    }
+
+    function updateCalibrationUI() {
+      if (!calibrationView || calibrationView.hidden) return;
+
+      const orientation = deviceState.orientation;
+      const motion = deviceState.motion;
+
+      const hasOrientationData = isValidNumber(orientation.alpha) || isValidNumber(orientation.beta) || isValidNumber(orientation.gamma);
+      const hasMotionData = isValidNumber(motion.acceleration.x) || isValidNumber(motion.acceleration.y) || isValidNumber(motion.acceleration.z) ||
+        isValidNumber(motion.rotationRate.alpha) || isValidNumber(motion.rotationRate.beta) || isValidNumber(motion.rotationRate.gamma);
+
+      if (calibrationElements.deviceAbsolute) {
+        calibrationElements.deviceAbsolute.textContent = hasOrientationData ? (orientation.absolute ? 'Sim' : 'Não') : '—';
+      }
+      if (calibrationElements.deviceAlpha) calibrationElements.deviceAlpha.textContent = formatDegrees(orientation.alpha);
+      if (calibrationElements.deviceBeta) calibrationElements.deviceBeta.textContent = formatDegrees(orientation.beta);
+      if (calibrationElements.deviceGamma) calibrationElements.deviceGamma.textContent = formatDegrees(orientation.gamma);
+      if (calibrationElements.deviceOrientationAge) calibrationElements.deviceOrientationAge.textContent = formatAge(orientation.timestamp);
+
+      let screenAngle = null;
+      if (screen.orientation && isValidNumber(screen.orientation.angle)) {
+        screenAngle = screen.orientation.angle;
+      } else if (isValidNumber(window.orientation)) {
+        screenAngle = Number(window.orientation);
+      }
+      if (calibrationElements.screenOrientation) {
+        calibrationElements.screenOrientation.textContent = isValidNumber(screenAngle) ? `${screenAngle.toFixed(0)}°` : '—';
+      }
+
+      const accel = motion.acceleration;
+      if (calibrationElements.accelX) calibrationElements.accelX.textContent = formatNumber(accel.x, ' m/s²');
+      if (calibrationElements.accelY) calibrationElements.accelY.textContent = formatNumber(accel.y, ' m/s²');
+      if (calibrationElements.accelZ) calibrationElements.accelZ.textContent = formatNumber(accel.z, ' m/s²');
+
+      const rotation = motion.rotationRate;
+      if (calibrationElements.rotationAlpha) calibrationElements.rotationAlpha.textContent = formatNumber(rotation.alpha, ' °/s', 1);
+      if (calibrationElements.rotationBeta) calibrationElements.rotationBeta.textContent = formatNumber(rotation.beta, ' °/s', 1);
+      if (calibrationElements.rotationGamma) calibrationElements.rotationGamma.textContent = formatNumber(rotation.gamma, ' °/s', 1);
+      if (calibrationElements.motionInterval) calibrationElements.motionInterval.textContent = formatInterval(motion.interval);
+      if (calibrationElements.motionAge) calibrationElements.motionAge.textContent = formatAge(motion.timestamp);
+
+      if (calibrationElements.progressValue) {
+        calibrationElements.progressValue.textContent = isValidNumber(progress) ? `${(progress * 100).toFixed(1)}%` : '—';
+      }
+      if (calibrationElements.ropeAngle) calibrationElements.ropeAngle.textContent = formatRadians(angle);
+      if (calibrationElements.ropeAngVel) calibrationElements.ropeAngVel.textContent = formatRadiansPerSecond(angVel);
+
+      const yawValue = camera ? camera.rotation.y : yaw;
+      const pitchValue = camera ? camera.rotation.x : pitch;
+      const rollValue = camera ? camera.rotation.z : angle;
+
+      if (calibrationElements.cameraYaw) calibrationElements.cameraYaw.textContent = formatRadians(yawValue);
+      if (calibrationElements.cameraPitch) calibrationElements.cameraPitch.textContent = formatRadians(pitchValue);
+      if (calibrationElements.cameraRoll) calibrationElements.cameraRoll.textContent = formatRadians(rollValue);
+
+      if (calibrationElements.cameraPosX) calibrationElements.cameraPosX.textContent = camera ? formatCoordinate(camera.position.x) : '—';
+      if (calibrationElements.cameraPosY) calibrationElements.cameraPosY.textContent = camera ? formatCoordinate(camera.position.y) : '—';
+      if (calibrationElements.cameraPosZ) calibrationElements.cameraPosZ.textContent = camera ? formatCoordinate(camera.position.z) : '—';
+
+      if ((hasOrientationData || hasMotionData) && sensorStatusState !== 'active') {
+        sensorStatusState = 'active';
+        if (sensorStatusEl) sensorStatusEl.textContent = 'Sensores ativos.';
+      }
+    }
+
+    function requestSensorsPermission() {
+      if (!enableSensorsBtn) return;
+
+      const messages = [];
+
+      const orientationPermission = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
+      const motionPermission = typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function';
+
+      const requests = [];
+
+      if (orientationPermission) {
+        requests.push(DeviceOrientationEvent.requestPermission().then((result) => {
+          messages.push(`Orientação: ${result}`);
+        }).catch((error) => {
+          messages.push(`Orientação: erro (${error.message || error})`);
+        }));
+      }
+
+      if (motionPermission) {
+        requests.push(DeviceMotionEvent.requestPermission().then((result) => {
+          messages.push(`Movimento: ${result}`);
+        }).catch((error) => {
+          messages.push(`Movimento: erro (${error.message || error})`);
+        }));
+      }
+
+      sensorStatusState = 'manual';
+
+      if (requests.length === 0) {
+        messages.push('Este dispositivo não requer permissão manual para os sensores.');
+        if (sensorStatusEl) sensorStatusEl.textContent = messages.join(' ');
+        return;
+      }
+
+      Promise.all(requests).then(() => {
+        if (sensorStatusEl) sensorStatusEl.textContent = messages.join(' ');
+      });
+    }
+
+    function handleDeviceOrientation(event) {
+      deviceState.orientation.alpha = isValidNumber(event.alpha) ? event.alpha : null;
+      deviceState.orientation.beta = isValidNumber(event.beta) ? event.beta : null;
+      deviceState.orientation.gamma = isValidNumber(event.gamma) ? event.gamma : null;
+      deviceState.orientation.absolute = !!event.absolute;
+      deviceState.orientation.timestamp = Date.now();
+    }
+
+    function handleDeviceMotion(event) {
+      const accelerationSource = event.accelerationIncludingGravity || event.acceleration || {};
+      deviceState.motion.acceleration.x = isValidNumber(accelerationSource.x) ? accelerationSource.x : null;
+      deviceState.motion.acceleration.y = isValidNumber(accelerationSource.y) ? accelerationSource.y : null;
+      deviceState.motion.acceleration.z = isValidNumber(accelerationSource.z) ? accelerationSource.z : null;
+
+      const rotationSource = event.rotationRate || {};
+      deviceState.motion.rotationRate.alpha = isValidNumber(rotationSource.alpha) ? rotationSource.alpha : null;
+      deviceState.motion.rotationRate.beta = isValidNumber(rotationSource.beta) ? rotationSource.beta : null;
+      deviceState.motion.rotationRate.gamma = isValidNumber(rotationSource.gamma) ? rotationSource.gamma : null;
+
+      deviceState.motion.interval = isValidNumber(event.interval) ? event.interval : null;
+      deviceState.motion.timestamp = Date.now();
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('deviceorientation', handleDeviceOrientation);
+      window.addEventListener('devicemotion', handleDeviceMotion);
+    }
+
+    const sensorsSupported = typeof DeviceOrientationEvent !== 'undefined' || typeof DeviceMotionEvent !== 'undefined';
+    if (sensorStatusEl) {
+      if (!sensorsSupported) {
+        sensorStatusEl.textContent = 'Sensores de movimento não são suportados neste navegador.';
+        sensorStatusState = 'manual';
+      }
+    }
+
+    if (enableSensorsBtn) {
+      const needsOrientationPermission = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
+      const needsMotionPermission = typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function';
+      if (needsOrientationPermission || needsMotionPermission) {
+        enableSensorsBtn.hidden = false;
+        enableSensorsBtn.addEventListener('click', requestSensorsPermission);
+      }
+    }
+
     function start() {
+      showView('menu');
       overlay.hidden = true;
-      init();
-      engine.runRenderLoop(() => animate());
+      if (!engine) {
+        init();
+        engine.runRenderLoop(() => animate());
+      }
     }
 
     function init() {
@@ -71,29 +485,24 @@
 
       camera = new BABYLON.UniversalCamera("camera", new BABYLON.Vector3(0, 1.6, 5), scene);
       camera.attachControl(canvas, true);
-      camera.inputs.removeByType("FreeCameraKeyboardMoveInput"); // desabilita WASD padrão
+      camera.inputs.removeByType("FreeCameraKeyboardMoveInput");
 
       const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-      // chão
       floor = BABYLON.MeshBuilder.CreateGround("floor", {width:200, height:200}, scene);
       floor.position.y = -5;
       floor.material = new BABYLON.StandardMaterial("floorMat", scene);
       floor.material.wireframe = true;
       floor.material.diffuseColor = new BABYLON.Color3(1, 0.2, 0);
 
-      // corda
       rope = BABYLON.MeshBuilder.CreateBox("rope", {width:0.1, height:0.05, depth:100}, scene);
       rope.position.y = 0;
 
-      // resize
       window.addEventListener('resize', () => engine.resize());
 
-      // inputs
       addEventListener('keydown', (e) => { if(e.key==='a') keys.a = true; if(e.key==='d') keys.d = true; });
       addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
-      // mouse movimento
       scene.onPointerObservable.add((pointerInfo) => {
         if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERMOVE && document.pointerLockElement) {
           yaw -= pointerInfo.event.movementX * 0.002;
@@ -102,7 +511,6 @@
         }
       });
 
-      // pointer lock
       canvas.addEventListener("click", () => {
         if (!document.pointerLockElement) canvas.requestPointerLock();
       });
@@ -124,10 +532,12 @@
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
 
-      camera.rotation.x = pitch;
-      camera.rotation.y = yaw;
-      camera.rotation.z = angle;
-      camera.position.z -= 2 * dt;
+      if (camera) {
+        camera.rotation.x = pitch;
+        camera.rotation.y = yaw;
+        camera.rotation.z = angle;
+        camera.position.z -= 2 * dt;
+      }
 
       progress = Math.min(1, progress + baseSpeed * dt);
       fillEl.style.width = (progress * 100).toFixed(1) + '%';
@@ -151,12 +561,20 @@
     function gameOver(win) {
       gameOverFlag = true;
       overlay.hidden = false;
-      document.getElementById('panel').innerHTML = win
-        ? '<h1>Você conseguiu!</h1><p>Chegou ao fim da corda.</p><button onclick="location.reload()">Recomeçar</button>'
-        : '<h1>Você caiu!</h1><p>Perdeu o equilíbrio e caiu.</p><button onclick="location.reload()">Recomeçar</button>';
+      showView('result');
+      if (resultTitleEl) resultTitleEl.textContent = win ? 'Você conseguiu!' : 'Você caiu!';
+      if (resultMessageEl) resultMessageEl.textContent = win ? 'Chegou ao fim da corda.' : 'Perdeu o equilíbrio e caiu.';
     }
 
-    playBtn.onclick = start;
+    if (playBtn) playBtn.addEventListener('click', start);
+    if (calibrateBtn) calibrateBtn.addEventListener('click', () => {
+      overlay.hidden = false;
+      showView('calibration');
+    });
+    if (backToMenuBtn) backToMenuBtn.addEventListener('click', () => showView('menu'));
+    if (resultRestartBtn) resultRestartBtn.addEventListener('click', () => location.reload());
+
+    showView('menu');
   })();
   </script>
 </body>

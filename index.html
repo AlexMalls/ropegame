@@ -50,7 +50,7 @@
   (() => {
     // ===== Estado base =====
     let scene, camera, renderer, rope, floor;
-    let angle = 0, angVel = 0; // roll do personagem (equilíbrio na corda)
+    let angle = 0, angVel = 0;
     const maxAngle = 0.5;
     const damping = 0.985;
     const baseControlPower = 1.5;
@@ -60,10 +60,8 @@
 
     const overlay = document.getElementById('overlay');
     const playBtn = document.getElementById('play');
-    const enableBtn = document.getElementById('enableSensors');
     const fillEl = document.getElementById('fill');
     const statusEl = document.getElementById('status');
-    const inputModeEl = document.getElementById('inputMode');
 
     let progress = 0;
     const baseSpeed = 0.05;
@@ -71,198 +69,19 @@
     const fadeDuration = 600;
     let startRequested = false;
     let gameActive = false;
-    let gameStarted = false;
 
-    const countdownSeconds = 3;
-    let countdownTimerId = null;
-    let countdownSprite;
-    let countdownTexture;
-    let countdownCanvas;
-    let countdownCtx;
-    let countdownHideTimeoutId = null;
-    let fadeTimeoutId = null;
-
-    // controle de câmera
-    let manualYaw = 0;
-    let manualPitch = 0;
-    const sensitivity = 0.002;
-    let pointerLocked = false;
-
-    // giroscópio e suavização
-    let gyroEnabled = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission !== 'function';
-    let gyroActive = false;
-    let lastGyroUpdate = 0;
-    const gyroTarget = { yaw: 0, pitch: 0, roll: 0 };
-    const gyroCurrent = { yaw: 0, pitch: 0, roll: 0 };
-    const gyroQuaternion = new THREE.Quaternion();
-    const gyroEuler = new THREE.Euler();
-    const q0 = new THREE.Quaternion();
-    const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
-    const zee = new THREE.Vector3(0, 0, 1);
-    const gyroSmoothing = 0.18;
-    const gyroControlScale = THREE.MathUtils.degToRad(35);
-    let gyroPermissionRequested = false;
-    let gyroControl = 0;
-
-    // calibração automática (média inicial)
-    const calibrationSamples = [];
-    let calibrationDone = false;
-    let pitchOffset = 0;
-    let yawOffset = 0;
-    let rollOffset = 0;
-
+    // ===== Simplificado: removi duplicações e fechei corretamente o onclick =====
     playBtn.onclick = () => {
       if (startRequested) return;
       startRequested = true;
       playBtn.disabled = true;
-      requestGyroPermission();
-      gameActive = false;
-      gameStarted = false;
       statusEl.textContent = 'Prepare-se';
-      let fadeHandled = false;
-    }
-
-    function startGameSequence() {
-      statusEl.textContent = 'Prepare-se';
-      let finished = false;
-      const finalizeFade = () => {
-        if (finished) return; finished = true;
-        overlay.hidden = true; overlay.classList.remove('fade-out');
-        overlay.removeEventListener('transitionend', handleFadeEnd);
-        activateGame();
-      };
-      const handleFadeEnd = (event) => {
-        if (event.target === overlay && event.propertyName === 'opacity') finalizeFade();
-      };
-      
-      fadeTimeoutId = setTimeout(finalizeFade, fadeDuration + 80);
-      overlay.addEventListener('transitionend', handleFadeEnd);
       overlay.classList.add('fade-out');
-      attemptFullscreen();
-    };
-
-    function requestGyroPermission() {
-      if (gyroEnabled || gyroPermissionRequested) return;
-      gyroPermissionRequested = true;
-      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        DeviceOrientationEvent.requestPermission().then((response) => {
-          gyroEnabled = response === 'granted';
-        }).catch(() => {
-          gyroEnabled = false;
-        });
-      }
-    }
-
-    function attemptFullscreen() {
-      const element = document.documentElement;
-      const request = element.requestFullscreen || element.webkitRequestFullscreen || element.msRequestFullscreen;
-      if (request) {
-        request.call(element);
-      }
-    }
-
-    function normalizeAngle(angle) {
-      return Math.atan2(Math.sin(angle), Math.cos(angle));
-    }
-
-    function smoothAngle(current, target, factor) {
-      return current + normalizeAngle(target - current) * factor;
-    }
-
-    function resetGyroCalibration() {
-      calibrationSamples.length = 0;
-      calibrationDone = false;
-      pitchOffset = 0;
-      yawOffset = 0;
-      rollOffset = 0;
-      gyroTarget.yaw = 0;
-      gyroTarget.pitch = 0;
-      gyroTarget.roll = 0;
-      gyroCurrent.yaw = 0;
-      gyroCurrent.pitch = 0;
-      gyroCurrent.roll = 0;
-      gyroControl = 0;
-      lastGyroUpdate = 0;
-    }
-
-    function ensureCountdownSprite() {
-      if (countdownSprite) return;
-      countdownCanvas = document.createElement('canvas');
-      countdownCanvas.width = countdownCanvas.height = 512;
-      countdownCtx = countdownCanvas.getContext('2d');
-      countdownTexture = new THREE.CanvasTexture(countdownCanvas);
-      const material = new THREE.SpriteMaterial({ map: countdownTexture, transparent: true });
-      material.depthWrite = false;
-      countdownSprite = new THREE.Sprite(material);
-      countdownSprite.scale.set(3, 3, 1);
-      countdownSprite.position.set(0, 2.4, -10);
-      countdownSprite.visible = false;
-      countdownSprite.renderOrder = 2;
-      scene.add(countdownSprite);
-    }
-
-    function updateCountdownTexture(value) {
-      ensureCountdownSprite();
-      const isNumber = typeof value === 'number';
-      const text = value.toString();
-      const size = countdownCanvas.width;
-      const center = size / 2;
-      countdownCtx.clearRect(0, 0, size, size);
-      countdownCtx.save();
-      countdownCtx.fillStyle = 'rgba(14,20,35,0.68)';
-      countdownCtx.beginPath();
-      countdownCtx.arc(center, center, size * 0.42, 0, Math.PI * 2);
-      countdownCtx.fill();
-      countdownCtx.lineWidth = size * 0.04;
-      countdownCtx.strokeStyle = 'rgba(90, 170, 255, 0.5)';
-      countdownCtx.stroke();
-      countdownCtx.fillStyle = '#f4f9ff';
-      countdownCtx.textAlign = 'center';
-      countdownCtx.textBaseline = 'middle';
-      countdownCtx.shadowColor = 'rgba(0,0,0,0.35)';
-      countdownCtx.shadowBlur = 28;
-      const fontSize = isNumber ? Math.round(size * 0.42) : Math.round(size * 0.28);
-      countdownCtx.font = `700 ${fontSize}px system-ui, sans-serif`;
-      countdownCtx.fillText(text, center, center + (isNumber ? size * 0.02 : 0));
-      countdownCtx.restore();
-      countdownTexture.needsUpdate = true;
-    }
-
-    function startCountdown() {
-      if (countdownTimerId) {
-        clearInterval(countdownTimerId);
-      }
-      if (countdownHideTimeoutId) {
-        clearTimeout(countdownHideTimeoutId);
-        countdownHideTimeoutId = null;
-      }
-      ensureCountdownSprite();
-      countdownSprite.visible = true;
-      gameStarted = false;
-      gameActive = false;
-      let current = countdownSeconds;
-      updateCountdownTexture(current);
-      countdownTimerId = setInterval(() => {
-        current -= 1;
-        if (current > 0) {
-          updateCountdownTexture(current);
-          return;
-        }
-        clearInterval(countdownTimerId);
-        countdownTimerId = null;
-        updateCountdownTexture('Vai!');
-        countdownHideTimeoutId = setTimeout(() => {
-          if (countdownSprite) countdownSprite.visible = false;
-        }, 500);
-        activateGame();
-      }, 1000);
-    }
-
-    function attemptFullscreen() {
-      const el = document.documentElement;
-      const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
-      if (req) try { req.call(el); } catch {}
-    }
+      setTimeout(() => {
+        overlay.hidden = true;
+        gameActive = true;
+      }, fadeDuration);
+    }; // <<< FECHAMENTO CORRETO
 
     // ===== Setup =====
     function init() {
@@ -271,21 +90,13 @@
       camera.position.set(0, 1.6, 5);
       camera.rotation.order = 'YXZ';
 
-      renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false, depth: true, preserveDrawingBuffer: false });
-      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      const dprCap = isMobile ? DPR_CAP_MOBILE : DPR_CAP_DESKTOP;
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
-      renderer.setSize(window.innerWidth, window.innerHeight, false);
-      renderer.outputColorSpace = THREE.SRGBColorSpace;
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.0;
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(renderer.domElement);
 
-      // Luz leve (barata)
       const hemi = new THREE.HemisphereLight(0xffffff, 0x323232, 1.0);
       scene.add(hemi);
 
-      // Chão wireframe (barato)
       const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
       const floorMat = new THREE.MeshBasicMaterial({ color: 0x202040, wireframe: true });
       floor = new THREE.Mesh(floorGeo, floorMat);
@@ -293,199 +104,52 @@
       floor.position.y = -5;
       scene.add(floor);
 
-      // Corda
       const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
-      const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.1, roughness: 0.8 });
+      const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
       rope = new THREE.Mesh(ropeGeo, ropeMat);
       scene.add(rope);
-
-      // Eventos de janela
-      window.addEventListener('resize', onResize);
-
-      // Teclado
-      const handleKey = (isPressed) => (event) => {
-        const key = event.key.toLowerCase();
-        if (key in keys) keys[key] = isPressed;
-        if (isPressed && key === 'r') recenterHeading();
-      };
-      addEventListener('keydown', handleKey(true));
-      addEventListener('keyup', handleKey(false));
-
-      document.body.addEventListener('click', () => {
-        if (!pointerLocked) {
-          renderer.domElement.requestPointerLock();
-        }
-      });
-      document.addEventListener('pointerlockchange', () => {
-        pointerLocked = document.pointerLockElement === renderer.domElement;
-      });
-      document.addEventListener('mousemove', (e) => {
-        if (pointerLocked) {
-          manualYaw -= e.movementX * sensitivity;
-          manualPitch -= e.movementY * sensitivity;
-          const maxManualPitch = Math.PI / 2 - 0.01;
-          manualPitch = Math.max(-maxManualPitch, Math.min(maxManualPitch, manualPitch));
-        }
-      });
-
-      window.addEventListener('deviceorientation', handleDeviceOrientation, { passive: true });
-
-      ensureCountdownSprite();
-      countdownSprite.visible = false;
-      fillEl.style.width = '0%';
-    }
-
-    function handleDeviceOrientation(event) {
-      if (!gyroEnabled) return;
-      const { alpha, beta, gamma } = event;
-      if (alpha === null || beta === null || gamma === null) return;
-
-      lastGyroUpdate = performance.now();
-      gyroActive = true;
-
-      const alphaRad = THREE.MathUtils.degToRad(alpha || 0);
-      const betaRad = THREE.MathUtils.degToRad(beta || 0);
-      const gammaRad = THREE.MathUtils.degToRad(gamma || 0);
-      const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-      const orientRad = THREE.MathUtils.degToRad(orientation || 0);
-
-      gyroEuler.set(betaRad, alphaRad, -gammaRad, 'YXZ');
-      gyroQuaternion.setFromEuler(gyroEuler);
-      gyroQuaternion.multiply(q1);
-      gyroQuaternion.multiply(q0.setFromAxisAngle(zee, -orientRad));
-      gyroEuler.setFromQuaternion(gyroQuaternion, 'YXZ');
-
-      let rawPitch = gyroEuler.x;
-      let rawYaw = gyroEuler.y;
-      let rawRoll = gyroEuler.z;
-
-      if (!Number.isFinite(rawPitch) || !Number.isFinite(rawYaw) || !Number.isFinite(rawRoll)) {
-        return;
-      }
-
-      if (!calibrationDone) {
-        calibrationSamples.push({ pitch: rawPitch, yaw: rawYaw, roll: rawRoll });
-        if (calibrationSamples.length >= 30) {
-          let pitchSum = 0;
-          let yawSum = 0;
-          let rollSum = 0;
-          for (const sample of calibrationSamples) {
-            pitchSum += sample.pitch;
-            yawSum += sample.yaw;
-            rollSum += sample.roll;
-          }
-          pitchOffset = pitchSum / calibrationSamples.length;
-          yawOffset = yawSum / calibrationSamples.length;
-          rollOffset = rollSum / calibrationSamples.length;
-          calibrationSamples.length = 0;
-          calibrationDone = true;
-        }
-        return;
-      }
-
-      rawPitch -= pitchOffset;
-      rawYaw -= yawOffset;
-      rawRoll -= rollOffset;
-
-      gyroTarget.pitch = THREE.MathUtils.clamp(rawPitch, -Math.PI / 2, Math.PI / 2);
-      gyroTarget.yaw = normalizeAngle(rawYaw);
-      gyroTarget.roll = THREE.MathUtils.clamp(rawRoll, -Math.PI, Math.PI);
     }
 
     function update(dt) {
-      driftTimer -= dt;
-      if (driftTimer <= 0) {
-        driftTimer = 1 + Math.random() * 1.5;
-        driftTarget = (Math.random() * 2 - 1) * 1.2;
-      }
-      drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
-
-      let control = gyroControl;
+      let control = 0;
       if (keys.a) control -= 1;
       if (keys.d) control += 1;
-      control = Math.max(-1, Math.min(1, control));
 
-      angVel += (drift * 0.5 + control * baseControlPower) * dt;
+      angVel += (control * baseControlPower) * dt;
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
 
-      // movimento para frente
       camera.position.z -= 2 * dt;
 
       progress = Math.min(1, progress + baseSpeed * dt);
       fillEl.style.width = (progress * 100).toFixed(1) + '%';
-      statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : (useGyro ? 'Giroscópio 1:1' : 'Equilibre-se');
+      statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : 'Equilibre-se';
 
       if (Math.abs(angle) > maxAngle) return gameOver(false);
       if (progress >= 1) return gameOver(true);
     }
-    let last = performance.now();
+
     function animate() {
       if (gameOverFlag) return;
       requestAnimationFrame(animate);
-      const now = performance.now();
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
-
-      const gyroFresh = gyroActive && (now - lastGyroUpdate) < 800;
-      if (gyroFresh) {
-        const smoothingStrength = 1 - Math.pow(1 - gyroSmoothing, dt * 60);
-        gyroCurrent.pitch += (gyroTarget.pitch - gyroCurrent.pitch) * smoothingStrength;
-        gyroCurrent.roll += (gyroTarget.roll - gyroCurrent.roll) * smoothingStrength;
-        gyroCurrent.yaw = smoothAngle(gyroCurrent.yaw, gyroTarget.yaw, smoothingStrength);
-        gyroControl = Math.max(-1, Math.min(1, gyroCurrent.roll / gyroControlScale));
-      } else {
-        const decay = Math.min(1, dt * 6);
-        gyroCurrent.pitch *= 1 - decay;
-        gyroCurrent.roll *= 1 - decay;
-        gyroCurrent.yaw *= 1 - decay;
-        gyroControl += (-gyroControl) * decay;
-        if (gyroActive && (now - lastGyroUpdate) > 3000) {
-          gyroActive = false;
-          resetGyroCalibration();
-        }
-      }
-
-      if (gameActive) {
-        update(dt);
-      }
-
-      const yawContribution = gyroFresh ? gyroCurrent.yaw : 0;
-      const pitchContribution = gyroFresh ? gyroCurrent.pitch : 0;
-      const maxPitch = Math.PI / 2 - 0.01;
-      const combinedPitch = Math.max(-maxPitch, Math.min(maxPitch, manualPitch + pitchContribution));
-      const combinedYaw = normalizeAngle(manualYaw + yawContribution);
-
-      camera.rotation.set(combinedPitch, combinedYaw, angle, 'YXZ');
+      const dt = 0.016;
+      if (gameActive) update(dt);
+      camera.rotation.set(0, 0, angle, 'YXZ');
       renderer.render(scene, camera);
     }
 
     function gameOver(win) {
-      gameOverFlag = true; gameActive = false;
-      overlay.hidden = false; overlay.classList.remove('fade-out');
+      gameOverFlag = true;
+      overlay.hidden = false;
+      overlay.classList.remove('fade-out');
       document.getElementById('panel').innerHTML = win
         ? '<h1>Você conseguiu!</h1><p>Chegou ao fim da corda.</p><button onclick="location.reload()">Recomeçar</button>'
         : '<h1>Você caiu!</h1><p>Perdeu o equilíbrio.</p><button onclick="location.reload()">Recomeçar</button>';
     }
 
-    // ===== Start =====
     init();
-    requestAnimationFrame(animate);
-
-    // Recentrar heading por gesto (toque com dois dedos)
-    let touchCount = 0; let touchTimer = null;
-    window.addEventListener('touchstart', (e) => {
-      touchCount = e.touches.length;
-      if (touchCount >= 2) {
-        if (touchTimer) clearTimeout(touchTimer);
-        touchTimer = setTimeout(() => { recenterHeading(); }, 300);
-      }
-    }, { passive: true });
-    window.addEventListener('touchend', () => { if (touchTimer) { clearTimeout(touchTimer); touchTimer = null; } }, { passive: true });
-
+    animate();
   })();
   </script>
 </body>
 </html>
-
-

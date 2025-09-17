@@ -57,14 +57,14 @@
     let progress = 0;
     let baseSpeed = 0.05;
     let gameOverFlag = false;
-    let gameReady = false; // só começa após o "Equilibre-se"
+    let gameReady = false;
 
     // câmera
     let yaw = 0, pitch = 0;
     let sensitivity = 0.002;
     let pointerLocked = false;
 
-    // calibração (média inicial do pitch)
+    // calibração pitch
     let calibrationSamples = [], calibrationDone = false;
     let pitchOffset = 0;
 
@@ -96,7 +96,6 @@
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      // renderer.outputEncoding = THREE.sRGBEncoding; // opcional
       document.body.appendChild(renderer.domElement);
 
       const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
@@ -137,7 +136,7 @@
         }
       });
 
-      // Giroscópio
+      // Giroscópio (mesma lógica da v2.1)
       window.addEventListener('deviceorientation', (e) => {
         const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
         let gamma = e.gamma || 0, beta = e.beta || 0, alpha = e.alpha || 0;
@@ -175,7 +174,6 @@
         }
       });
 
-      // Raycast clique/toque
       window.addEventListener('mousedown', onClick);
       window.addEventListener('touchstart', (e) => {
         if(e.touches.length>0){
@@ -184,51 +182,39 @@
       });
     }
 
-    // --------- Texto via Canvas (suporta acentos) ----------
+    // Texto 3D (canvas → textura)
     function createTextPlane(text, {
       font = '700 96px system-ui',
       fill = '#ffffff',
       stroke = '#000000',
       strokeWidth = 8,
       padding = 32,
-      maxWidth = null,
       align = 'center',
-      worldHeight = 1.2   // altura do plano em unidades do mundo
+      worldHeight = 1.2
     } = {}) {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-
-      // Medidas de texto
       ctx.font = font;
       ctx.textAlign = align;
       ctx.textBaseline = 'middle';
-
       const lines = String(text).split('\n');
-      const lineHeight = 110; // px, ajuste fino para a fonte escolhida
-
-      // mede a largura máxima
+      const lineHeight = 110;
       let maxLineWidth = 0;
       for (const line of lines) {
         const w = ctx.measureText(line).width;
         if (w > maxLineWidth) maxLineWidth = w;
       }
-
       const textW = Math.ceil(maxLineWidth) + padding * 2;
       const textH = Math.ceil(lines.length * lineHeight) + padding * 2;
-
       canvas.width  = Math.ceil(textW * dpr);
       canvas.height = Math.ceil(textH * dpr);
-
       ctx.scale(dpr, dpr);
       ctx.font = font;
       ctx.textAlign = align;
       ctx.textBaseline = 'middle';
-
-      // fundo transparente; contorno + preenchimento
       const centerX = align === 'center' ? canvas.width / (2*dpr) : padding;
       const startY = padding + lineHeight/2;
-
       for (let i = 0; i < lines.length; i++) {
         const y = startY + i * lineHeight;
         if (strokeWidth > 0) {
@@ -239,23 +225,16 @@
         ctx.fillStyle = fill;
         ctx.fillText(lines[i], centerX, y);
       }
-
       const tex = new THREE.CanvasTexture(canvas);
       tex.minFilter = THREE.LinearFilter;
       tex.magFilter = THREE.LinearFilter;
-      // tex.encoding = THREE.sRGBEncoding; // opcional
-
       const aspect = canvas.width / canvas.height;
       const worldWidth = worldHeight * aspect;
-
       const geo = new THREE.PlaneGeometry(worldWidth, worldHeight);
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
-      const mesh = new THREE.Mesh(geo, mat);
-      return mesh;
+      return new THREE.Mesh(geo, mat);
     }
-    // ------------------------------------------------------
 
-    // Contador
     function createCountdownText(text) {
       if (countdownMesh) scene.remove(countdownMesh);
       countdownMesh = createTextPlane(text, {
@@ -265,7 +244,7 @@
         strokeWidth: 10,
         worldHeight: 1.2
       });
-      countdownMesh.position.set(0, 2, -3); // no mundo, à frente do spawn
+      countdownMesh.position.set(0, 2, -3);
       scene.add(countdownMesh);
     }
 
@@ -280,17 +259,12 @@
       }, 5000);
     }
 
-    // Fim de jogo (cria na frente da câmera)
     function showGameOverText(win) {
-      // sair do pointer lock pra permitir clique
       if (document.exitPointerLock) document.exitPointerLock();
-
       const msg = win ? "Você conseguiu!" : "Você caiu!";
       const dir = new THREE.Vector3();
       camera.getWorldDirection(dir);
       const basePos = camera.position.clone().add(dir.multiplyScalar(5));
-
-      // título
       const titleMesh = createTextPlane(msg, {
         font: '800 88px system-ui',
         fill: win ? '#00ff88' : '#ff4444',
@@ -299,10 +273,8 @@
         worldHeight: 1.2
       });
       titleMesh.position.copy(basePos);
-      titleMesh.position.y += 1; // um pouco acima
+      titleMesh.position.y += 1;
       scene.add(titleMesh);
-
-      // botão
       const btnMesh = createTextPlane("Recomeçar", {
         font: '700 72px system-ui',
         fill: '#ffffff',
@@ -313,17 +285,13 @@
       btnMesh.position.copy(basePos);
       btnMesh.position.y -= 0.2;
       scene.add(btnMesh);
-
-      // marca para raycast
       btnMesh.userData.isRestart = true;
       clickableObjects.length = 0;
       clickableObjects.push(btnMesh);
     }
 
     function onClick(event) {
-      // se ainda no jogo e com pointer lock, não fazemos raycast de UI
       if (!gameOverFlag && pointerLocked) return;
-
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
@@ -338,7 +306,8 @@
 
     function update(dt) {
       if (!gameReady || gameOverFlag) {
-        camera.rotation.set(pitch, yaw, angle);
+        camera.rotation.set(pitch, yaw, 0);
+        camera.rotation.z = angle;
         return;
       }
 
@@ -357,7 +326,9 @@
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
 
-      camera.rotation.set(pitch, yaw, angle);
+      // aplica yaw/pitch e depois o balanço separado
+      camera.rotation.set(pitch, yaw, 0);
+      camera.rotation.z = angle;
       camera.position.z -= 2 * dt;
 
       progress = Math.min(1, progress + baseSpeed * dt);
@@ -374,7 +345,6 @@
       const now = performance.now();
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-
       update(dt);
       renderer.render(scene, camera);
     }
@@ -383,14 +353,6 @@
       gameOverFlag = true;
       showGameOverText(win);
     }
-
-    // eventos finais
-    window.addEventListener('mousedown', onClick);
-    window.addEventListener('touchstart', (e) => {
-      if(e.touches.length>0){
-        onClick({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
-      }
-    });
 
   })();
   </script>

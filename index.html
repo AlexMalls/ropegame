@@ -7,21 +7,35 @@
   <style>
     body { background:#0b0f14; color:#e2e8f0; font-family:system-ui; margin:0; padding:10px; }
     button { margin:4px; padding:8px 14px; border:1px solid #334; background:#223; color:#eee; border-radius:6px; }
-    #cube { margin:20px auto; width:120px; height:120px; transform-style:preserve-3d; perspective:800px; }
-    .face { position:absolute; width:120px; height:120px; border:1px solid #666; background:#2a3; opacity:.8; }
-    .f1{transform:translateZ(60px);} .f2{transform:rotateY(180deg) translateZ(60px);}
-    .f3{transform:rotateY(90deg) translateZ(60px);} .f4{transform:rotateY(-90deg) translateZ(60px);}
-    .f5{transform:rotateX(90deg) translateZ(60px);} .f6{transform:rotateX(-90deg) translateZ(60px);}
-    #log { white-space:pre; font:12px/1.4 monospace; background:#111; padding:8px; border:1px solid #333; margin-top:12px; max-height:45vh; overflow:auto; }
+    .scene { width:200px; height:200px; margin:20px auto; perspective:800px; }
+    #cube { width:200px; height:200px; position:relative; transform-style:preserve-3d; transition:transform 0.1s linear; }
+    .face {
+      position:absolute; width:200px; height:200px; border:2px solid #666;
+      background:rgba(100,150,250,0.2); color:#fff; font-weight:bold;
+      display:flex; align-items:center; justify-content:center; font-size:20px;
+    }
+    .front { transform:translateZ(100px); }
+    .back { transform:rotateY(180deg) translateZ(100px); }
+    .right { transform:rotateY(90deg) translateZ(100px); }
+    .left { transform:rotateY(-90deg) translateZ(100px); }
+    .top { transform:rotateX(90deg) translateZ(100px); }
+    .bottom { transform:rotateX(-90deg) translateZ(100px); }
+    #log { white-space:pre; font:12px/1.4 monospace; background:#111; padding:8px; border:1px solid #333; margin-top:12px; max-height:40vh; overflow:auto; }
   </style>
 </head>
 <body>
   <button id="btnStart">Iniciar</button>
+  <button id="btnStop">Stop</button>
   <button id="btnCalibrate">Calibrar neutro</button>
-  <div id="cube">
-    <div class="face f1">1</div><div class="face f2">2</div>
-    <div class="face f3">3</div><div class="face f4">4</div>
-    <div class="face f5">5</div><div class="face f6">6</div>
+  <div class="scene">
+    <div id="cube">
+      <div class="face front">FRENTE</div>
+      <div class="face back">TRÁS</div>
+      <div class="face right">DIREITA</div>
+      <div class="face left">ESQUERDA</div>
+      <div class="face top">CIMA</div>
+      <div class="face bottom">BAIXO</div>
+    </div>
   </div>
   <div id="log"></div>
 
@@ -30,6 +44,7 @@
   const cube=document.getElementById("cube");
   const logEl=document.getElementById("log");
   const btnStart=document.getElementById("btnStart");
+  const btnStop=document.getElementById("btnStop");
   const btnCal=document.getElementById("btnCalibrate");
 
   let started=false, offsets={pitch:0,roll:0}, lastAngles={alpha:0,beta:0,gamma:0};
@@ -38,6 +53,15 @@
   function getScreenAngle(){
     const o=screen.orientation||screen.msOrientation;
     return o&&typeof o.angle==="number"?o.angle:(window.orientation||0);
+  }
+
+  function getOrientationName() {
+    const ang = getScreenAngle();
+    if (ang===0) return "Portrait (normal)";
+    if (ang===180) return "Portrait (de cabeça pra baixo)";
+    if (ang===90) return "Landscape (botões à direita)";
+    if (ang===270) return "Landscape (botões à esquerda)";
+    return "Desconhecido";
   }
 
   function map(alpha,beta,gamma){
@@ -71,10 +95,10 @@
   function start(){
     if(started) return;
     started=true;
+    logEl.textContent+=`>>> Iniciado. Orientação inicial: ${getOrientationName()}\n`;
     window.addEventListener("deviceorientation",onOrientation,{passive:true});
     raf=requestAnimationFrame(tick);
 
-    // inicia debug log 1x/seg
     intervalId=setInterval(()=>{
       const {alpha,beta,gamma}=lastAngles;
       const m=map(alpha,beta,gamma);
@@ -90,6 +114,15 @@
     },1000);
   }
 
+  function stop(){
+    if(!started) return;
+    started=false;
+    cancelAnimationFrame(raf);
+    clearInterval(intervalId);
+    window.removeEventListener("deviceorientation",onOrientation);
+    logEl.textContent+=">>> Parado\n";
+  }
+
   function calibrate(){
     const m=map(lastAngles.alpha,lastAngles.beta,lastAngles.gamma);
     offsets.pitch=m.pitch;
@@ -98,6 +131,7 @@
   }
 
   btnStart.addEventListener("click",start);
+  btnStop.addEventListener("click",stop);
   btnCal.addEventListener("click",calibrate);
 })();
 </script>

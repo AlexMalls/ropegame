@@ -10,8 +10,8 @@
     #hud { position: fixed; top: 0; left: 0; right: 0; padding: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
     .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
-    .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; color:#eee; }
-    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; transition: opacity 1s; }
+    .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; }
+    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; text-align: center; }
     #panel { background: rgba(0,0,0,0.85); padding: 20px; border-radius: 12px; max-width: 600px; }
     button { margin-top: 12px; padding: 10px 16px; background: #222; color: #eee; border: 1px solid #555; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #333; }
@@ -35,9 +35,7 @@
     </div>
   </div>
 
-  <!-- Three r147 (global THREE.*) -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
   (() => {
     let scene, camera, renderer, rope, floor;
@@ -57,36 +55,33 @@
     let progress = 0;
     let baseSpeed = 0.05;
     let gameOverFlag = false;
-    let gameReady = false;
 
-    // câmera
-    let yaw = 0, pitch = 0;
+    // controle de câmera
+    let yaw = 0;
+    let pitch = 0;
     let sensitivity = 0.002;
     let pointerLocked = false;
 
-    // calibração pitch
-    let calibrationSamples = [], calibrationDone = false;
+    // calibração automática (média inicial)
+    let calibrationSamples = [];
+    let calibrationDone = false;
+    let yawOffset = 0;
     let pitchOffset = 0;
-
-    // UI 3D
-    let countdownMesh;
-    const clickableObjects = [];
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
 
     playBtn.onclick = start;
 
     function start() {
-      overlay.style.opacity = 0;
-      setTimeout(() => overlay.hidden = true, 1000);
+      overlay.hidden = true;
 
+      // tenta entrar em fullscreen (mobile)
       if (document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen().catch(()=>{});
+        document.documentElement.requestFullscreen();
+      } else if (document.documentElement.webkitRequestFullscreen) {
+        document.documentElement.webkitRequestFullscreen();
       }
 
       init();
       animate();
-      startCountdown();
     }
 
     function init() {
@@ -123,7 +118,9 @@
       addEventListener('keyup', (e) => { if(e.key==='a') keys.a = false; if(e.key==='d') keys.d = false; });
 
       document.body.addEventListener('click', () => {
-        if (!pointerLocked && renderer.domElement.requestPointerLock) renderer.domElement.requestPointerLock();
+        if (!pointerLocked) {
+          renderer.domElement.requestPointerLock();
+        }
       });
       document.addEventListener('pointerlockchange', () => {
         pointerLocked = document.pointerLockElement === renderer.domElement;
@@ -136,181 +133,40 @@
         }
       });
 
-      // Giroscópio (mesma lógica da v2.1)
+      // Giroscópio com média inicial
       window.addEventListener('deviceorientation', (e) => {
         const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-        let gamma = e.gamma || 0, beta = e.beta || 0, alpha = e.alpha || 0;
+        let gamma = e.gamma || 0;
+        let beta = e.beta || 0;
+        let alpha = e.alpha || 0;
 
-        let currentPitch = Math.abs(orientation) === 90
-          ? THREE.MathUtils.degToRad(gamma) * 0.5
-          : THREE.MathUtils.degToRad(beta) * 0.5;
+        let currentYaw = THREE.MathUtils.degToRad(alpha);
+        let currentPitch = Math.abs(orientation) === 90 ? THREE.MathUtils.degToRad(gamma) * 0.5 : THREE.MathUtils.degToRad(beta) * 0.5;
 
         if (!calibrationDone) {
           calibrationSamples.push(currentPitch);
+        
           if (calibrationSamples.length >= 15) {
             let sumPitch = 0;
-            for (let p of calibrationSamples) sumPitch += p;
+            calibrationSamples.forEach(p => sumPitch += p);
             pitchOffset = sumPitch / calibrationSamples.length;
             calibrationDone = true;
           }
         } else {
           if (Math.abs(orientation) === 90) {
             angle -= beta * 0.0005;
-            yaw = THREE.MathUtils.degToRad(alpha);
+            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
             pitch = -(THREE.MathUtils.degToRad(gamma) * 0.5 - pitchOffset);
           } else {
             angle -= gamma * 0.0005;
-            yaw = THREE.MathUtils.degToRad(alpha);
+            yaw = THREE.MathUtils.degToRad(alpha); // sem offset
             pitch = -(THREE.MathUtils.degToRad(beta) * 0.5 - pitchOffset);
           }
         }
       });
-
-      // iOS: pedir permissão após gesto
-      renderer.domElement.addEventListener('click', async () => {
-        const D = window.DeviceOrientationEvent;
-        if (D && typeof D.requestPermission === 'function') {
-          try { await D.requestPermission(); } catch {}
-        }
-      });
-
-      window.addEventListener('mousedown', onClick);
-      window.addEventListener('touchstart', (e) => {
-        if(e.touches.length>0){
-          onClick({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
-        }
-      });
-    }
-
-    // Texto 3D (canvas → textura)
-    function createTextPlane(text, {
-      font = '700 96px system-ui',
-      fill = '#ffffff',
-      stroke = '#000000',
-      strokeWidth = 8,
-      padding = 32,
-      align = 'center',
-      worldHeight = 1.2
-    } = {}) {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      ctx.font = font;
-      ctx.textAlign = align;
-      ctx.textBaseline = 'middle';
-      const lines = String(text).split('\n');
-      const lineHeight = 110;
-      let maxLineWidth = 0;
-      for (const line of lines) {
-        const w = ctx.measureText(line).width;
-        if (w > maxLineWidth) maxLineWidth = w;
-      }
-      const textW = Math.ceil(maxLineWidth) + padding * 2;
-      const textH = Math.ceil(lines.length * lineHeight) + padding * 2;
-      canvas.width  = Math.ceil(textW * dpr);
-      canvas.height = Math.ceil(textH * dpr);
-      ctx.scale(dpr, dpr);
-      ctx.font = font;
-      ctx.textAlign = align;
-      ctx.textBaseline = 'middle';
-      const centerX = align === 'center' ? canvas.width / (2*dpr) : padding;
-      const startY = padding + lineHeight/2;
-      for (let i = 0; i < lines.length; i++) {
-        const y = startY + i * lineHeight;
-        if (strokeWidth > 0) {
-          ctx.lineWidth = strokeWidth;
-          ctx.strokeStyle = stroke;
-          ctx.strokeText(lines[i], centerX, y);
-        }
-        ctx.fillStyle = fill;
-        ctx.fillText(lines[i], centerX, y);
-      }
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.minFilter = THREE.LinearFilter;
-      tex.magFilter = THREE.LinearFilter;
-      const aspect = canvas.width / canvas.height;
-      const worldWidth = worldHeight * aspect;
-      const geo = new THREE.PlaneGeometry(worldWidth, worldHeight);
-      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
-      return new THREE.Mesh(geo, mat);
-    }
-
-    function createCountdownText(text) {
-      if (countdownMesh) scene.remove(countdownMesh);
-      countdownMesh = createTextPlane(text, {
-        font: '700 96px system-ui',
-        fill: '#ffffff',
-        stroke: '#000000',
-        strokeWidth: 10,
-        worldHeight: 1.2
-      });
-      countdownMesh.position.set(0, 2, -3);
-      scene.add(countdownMesh);
-    }
-
-    function startCountdown() {
-      setTimeout(() => createCountdownText("3"), 1000);
-      setTimeout(() => createCountdownText("2"), 2000);
-      setTimeout(() => createCountdownText("1"), 3000);
-      setTimeout(() => createCountdownText("Equilibre-se"), 4000);
-      setTimeout(() => {
-        if (countdownMesh) scene.remove(countdownMesh);
-        gameReady = true;
-      }, 5000);
-    }
-
-    function showGameOverText(win) {
-      if (document.exitPointerLock) document.exitPointerLock();
-      const msg = win ? "Você conseguiu!" : "Você caiu!";
-      const dir = new THREE.Vector3();
-      camera.getWorldDirection(dir);
-      const basePos = camera.position.clone().add(dir.multiplyScalar(5));
-      const titleMesh = createTextPlane(msg, {
-        font: '800 88px system-ui',
-        fill: win ? '#00ff88' : '#ff4444',
-        stroke: '#000000',
-        strokeWidth: 10,
-        worldHeight: 1.2
-      });
-      titleMesh.position.copy(basePos);
-      titleMesh.position.y += 1;
-      scene.add(titleMesh);
-      const btnMesh = createTextPlane("Recomeçar", {
-        font: '700 72px system-ui',
-        fill: '#ffffff',
-        stroke: '#000000',
-        strokeWidth: 8,
-        worldHeight: 0.9
-      });
-      btnMesh.position.copy(basePos);
-      btnMesh.position.y -= 0.2;
-      scene.add(btnMesh);
-      btnMesh.userData.isRestart = true;
-      clickableObjects.length = 0;
-      clickableObjects.push(btnMesh);
-    }
-
-    function onClick(event) {
-      if (!gameOverFlag && pointerLocked) return;
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(clickableObjects, true);
-      if (intersects.length > 0) {
-        const obj = intersects[0].object;
-        if (obj.userData.isRestart) {
-          location.reload();
-        }
-      }
     }
 
     function update(dt) {
-      if (!gameReady || gameOverFlag) {
-        camera.rotation.set(pitch, yaw, 0);
-        camera.rotation.z = angle;
-        return;
-      }
-
       driftTimer -= dt;
       if (driftTimer <= 0) {
         driftTimer = 1 + Math.random() * 1.5;
@@ -326,9 +182,7 @@
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
 
-      // aplica yaw/pitch e depois o balanço separado
-      camera.rotation.set(pitch, yaw, 0);
-      camera.rotation.z = angle;
+      camera.rotation.set(pitch, yaw, angle);
       camera.position.z -= 2 * dt;
 
       progress = Math.min(1, progress + baseSpeed * dt);
@@ -341,20 +195,27 @@
 
     let last = performance.now();
     function animate() {
+      if (gameOverFlag) return;
       requestAnimationFrame(animate);
       const now = performance.now();
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
+
       update(dt);
       renderer.render(scene, camera);
     }
 
     function gameOver(win) {
       gameOverFlag = true;
-      showGameOverText(win);
+      overlay.hidden = false;
+      document.getElementById('panel').innerHTML = win
+        ? '<h1>Você conseguiu!</h1><p>Chegou ao fim da corda.</p><button onclick="location.reload()">Recomeçar</button>'
+        : '<h1>Você caiu!</h1><p>Perdeu o equilíbrio e caiu na lava.</p><button onclick="location.reload()">Recomeçar</button>';
     }
-
   })();
   </script>
 </body>
 </html>
+
+
+

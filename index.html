@@ -73,124 +73,53 @@
     let gameActive = false;
     let gameStarted = false;
 
-    // ===== Render otimizado =====
-    const DPR_CAP_DESKTOP = 1.5; // limite para desktop
-    const DPR_CAP_MOBILE  = 1.25; // limite para mobile
-    let targetFPS = 60;
-    let adaptiveTimer = 0;
+    const countdownSeconds = 3;
+    let countdownTimerId = null;
+    let countdownSprite;
+    let countdownTexture;
+    let countdownCanvas;
+    let countdownCtx;
+    let countdownHideTimeoutId = null;
+    let fadeTimeoutId = null;
 
-    // ===== Câmera / Look =====
-    let yaw = 0, pitch = 0; // para mouse/desktop
+    // controle de câmera
+    let manualYaw = 0;
+    let manualPitch = 0;
     const sensitivity = 0.002;
     let pointerLocked = false;
 
-    // ===== Giroscópio 1:1 =====
-    // Implementação baseada no mapeamento do DeviceOrientation para um quaternion de câmera no mundo.
-    // Equivalente aos princípios de THREE.DeviceOrientationControls, com smoothing e tela em qualquer orientação.
-    let useGyro = false;
-    let gyroAvailable = false;
-    let deviceQuat = new THREE.Quaternion();
-    let smoothedQuat = new THREE.Quaternion();
-    let screenTransform = new THREE.Quaternion();
-    let worldTransform = new THREE.Quaternion();
-    let finalQuat = new THREE.Quaternion();
-    const zAxis = new THREE.Vector3(0,0,1);
+    // giroscópio e suavização
+    let gyroEnabled = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission !== 'function';
+    let gyroActive = false;
+    let lastGyroUpdate = 0;
+    const gyroTarget = { yaw: 0, pitch: 0, roll: 0 };
+    const gyroCurrent = { yaw: 0, pitch: 0, roll: 0 };
+    const gyroQuaternion = new THREE.Quaternion();
+    const gyroEuler = new THREE.Euler();
+    const q0 = new THREE.Quaternion();
+    const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+    const zee = new THREE.Vector3(0, 0, 1);
+    const gyroSmoothing = 0.18;
+    const gyroControlScale = THREE.MathUtils.degToRad(35);
+    let gyroPermissionRequested = false;
+    let gyroControl = 0;
 
-    // offsets/calibração: permitir recentrar o heading (alpha) sem estranhas rotações
-    let headingOffset = 0; // em radianos
+    // calibração automática (média inicial)
+    const calibrationSamples = [];
+    let calibrationDone = false;
+    let pitchOffset = 0;
+    let yawOffset = 0;
+    let rollOffset = 0;
 
-    function eulerFromDevice(alpha, beta, gamma) {
-      // alpha: z (0..360), beta: x (-180..180), gamma: y (-90..90) em graus
-      const _alpha = THREE.MathUtils.degToRad(alpha || 0);
-      const _beta  = THREE.MathUtils.degToRad(beta  || 0);
-      const _gamma = THREE.MathUtils.degToRad(gamma || 0);
-      // Ordem 'YXZ' é a usada classicamente para este caso
-      const euler = new THREE.Euler(_beta, _alpha, -_gamma, 'YXZ');
-      return euler;
-    }
-
-    function updateScreenTransform() {
-      const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-      const rot = THREE.MathUtils.degToRad(orientation || 0);
-      screenTransform.setFromAxisAngle(zAxis, -rot); // compensar rotação da tela
-    }
-
-    function quaternionFromDevice(alpha, beta, gamma) {
-      const euler = eulerFromDevice(alpha, beta, gamma);
-      const q = new THREE.Quaternion().setFromEuler(euler);
-      // Compensar orientação da tela
-      updateScreenTransform();
-      q.multiply(screenTransform);
-      // Aplicar offset de heading (permitir "recentrar")
-      const headingQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), headingOffset);
-      q.premultiply(headingQ);
-      // Mapeia do espaço do dispositivo para o mundo da câmera
-      // Pequena correção: alinhar "para cima" do mundo ao eixo Y
-      worldTransform.setFromAxisAngle(new THREE.Vector3(1,0,0), 0);
-      q.multiply(worldTransform);
-      return q;
-    }
-
-    function enableDeviceOrientation() {
-      // iOS necessita permissão explícita
-      const needPerm = typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function';
-      const needPerm2 = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
-
-      function onGranted() {
-        window.addEventListener('deviceorientation', handleDeviceOrientation, { passive: true });
-        gyroAvailable = true; useGyro = true;
-        inputModeEl.textContent = 'Giroscópio ativo (1:1)';
-      }
-
-      function onDenied(err) {
-        console.warn('Permissão negada ou não suportado:', err);
-        gyroAvailable = false; useGyro = false;
-        inputModeEl.textContent = 'Sem acesso a giroscópio — use mouse/teclas';
-      }
-
-      try {
-        if (needPerm2) {
-          DeviceOrientationEvent.requestPermission().then(res => {
-            if (res === 'granted') onGranted(); else onDenied('not granted');
-          }).catch(onDenied);
-        } else if (needPerm) {
-          DeviceMotionEvent.requestPermission().then(res => {
-            if (res === 'granted') onGranted(); else onDenied('not granted');
-          }).catch(onDenied);
-        } else {
-          // Android ou navegadores que não precisam de permissão
-          onGranted();
-        }
-      } catch (e) {
-        onDenied(e);
-      }
-    }
-
-    function handleDeviceOrientation(e) {
-      const { alpha, beta, gamma } = e;
-      if (alpha == null || beta == null || gamma == null) return;
-      deviceQuat.copy(quaternionFromDevice(alpha, beta, gamma));
-    }
-
-    function recenterHeading() {
-      // Define o heading atual como zero (útil para alinhar o "frente" do mundo)
-      // Extrai yaw atual do deviceQuat, ajusta headingOffset para compensar
-      const e = new THREE.Euler().setFromQuaternion(deviceQuat, 'YXZ');
-      const currentYaw = e.y; // yaw
-      headingOffset -= currentYaw;
-    }
-
-    // ===== UI =====
     playBtn.onclick = () => {
       if (startRequested) return;
       startRequested = true;
       playBtn.disabled = true;
-      startGameSequence();
-    };
-
-    enableBtn.onclick = () => {
-      enableDeviceOrientation();
-    };
+      requestGyroPermission();
+      gameActive = false;
+      gameStarted = false;
+      statusEl.textContent = 'Prepare-se';
+      let fadeHandled = false;
 
     function startGameSequence() {
       statusEl.textContent = 'Prepare-se';
@@ -204,9 +133,128 @@
       const handleFadeEnd = (event) => {
         if (event.target === overlay && event.propertyName === 'opacity') finalizeFade();
       };
+      
+      fadeTimeoutId = setTimeout(finalizeFade, fadeDuration + 80);
       overlay.addEventListener('transitionend', handleFadeEnd);
       overlay.classList.add('fade-out');
       attemptFullscreen();
+    };
+
+    function requestGyroPermission() {
+      if (gyroEnabled || gyroPermissionRequested) return;
+      gyroPermissionRequested = true;
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission().then((response) => {
+          gyroEnabled = response === 'granted';
+        }).catch(() => {
+          gyroEnabled = false;
+        });
+      }
+    }
+
+    function attemptFullscreen() {
+      const element = document.documentElement;
+      const request = element.requestFullscreen || element.webkitRequestFullscreen || element.msRequestFullscreen;
+      if (request) {
+        request.call(element);
+      }
+    }
+
+    function normalizeAngle(angle) {
+      return Math.atan2(Math.sin(angle), Math.cos(angle));
+    }
+
+    function smoothAngle(current, target, factor) {
+      return current + normalizeAngle(target - current) * factor;
+    }
+
+    function resetGyroCalibration() {
+      calibrationSamples.length = 0;
+      calibrationDone = false;
+      pitchOffset = 0;
+      yawOffset = 0;
+      rollOffset = 0;
+      gyroTarget.yaw = 0;
+      gyroTarget.pitch = 0;
+      gyroTarget.roll = 0;
+      gyroCurrent.yaw = 0;
+      gyroCurrent.pitch = 0;
+      gyroCurrent.roll = 0;
+      gyroControl = 0;
+      lastGyroUpdate = 0;
+    }
+
+    function ensureCountdownSprite() {
+      if (countdownSprite) return;
+      countdownCanvas = document.createElement('canvas');
+      countdownCanvas.width = countdownCanvas.height = 512;
+      countdownCtx = countdownCanvas.getContext('2d');
+      countdownTexture = new THREE.CanvasTexture(countdownCanvas);
+      const material = new THREE.SpriteMaterial({ map: countdownTexture, transparent: true });
+      material.depthWrite = false;
+      countdownSprite = new THREE.Sprite(material);
+      countdownSprite.scale.set(3, 3, 1);
+      countdownSprite.position.set(0, 2.4, -10);
+      countdownSprite.visible = false;
+      countdownSprite.renderOrder = 2;
+      scene.add(countdownSprite);
+    }
+
+    function updateCountdownTexture(value) {
+      ensureCountdownSprite();
+      const isNumber = typeof value === 'number';
+      const text = value.toString();
+      const size = countdownCanvas.width;
+      const center = size / 2;
+      countdownCtx.clearRect(0, 0, size, size);
+      countdownCtx.save();
+      countdownCtx.fillStyle = 'rgba(14,20,35,0.68)';
+      countdownCtx.beginPath();
+      countdownCtx.arc(center, center, size * 0.42, 0, Math.PI * 2);
+      countdownCtx.fill();
+      countdownCtx.lineWidth = size * 0.04;
+      countdownCtx.strokeStyle = 'rgba(90, 170, 255, 0.5)';
+      countdownCtx.stroke();
+      countdownCtx.fillStyle = '#f4f9ff';
+      countdownCtx.textAlign = 'center';
+      countdownCtx.textBaseline = 'middle';
+      countdownCtx.shadowColor = 'rgba(0,0,0,0.35)';
+      countdownCtx.shadowBlur = 28;
+      const fontSize = isNumber ? Math.round(size * 0.42) : Math.round(size * 0.28);
+      countdownCtx.font = `700 ${fontSize}px system-ui, sans-serif`;
+      countdownCtx.fillText(text, center, center + (isNumber ? size * 0.02 : 0));
+      countdownCtx.restore();
+      countdownTexture.needsUpdate = true;
+    }
+
+    function startCountdown() {
+      if (countdownTimerId) {
+        clearInterval(countdownTimerId);
+      }
+      if (countdownHideTimeoutId) {
+        clearTimeout(countdownHideTimeoutId);
+        countdownHideTimeoutId = null;
+      }
+      ensureCountdownSprite();
+      countdownSprite.visible = true;
+      gameStarted = false;
+      gameActive = false;
+      let current = countdownSeconds;
+      updateCountdownTexture(current);
+      countdownTimerId = setInterval(() => {
+        current -= 1;
+        if (current > 0) {
+          updateCountdownTexture(current);
+          return;
+        }
+        clearInterval(countdownTimerId);
+        countdownTimerId = null;
+        updateCountdownTexture('Vai!');
+        countdownHideTimeoutId = setTimeout(() => {
+          if (countdownSprite) countdownSprite.visible = false;
+        }, 500);
+        activateGame();
+      }, 1000);
     }
 
     function attemptFullscreen() {
@@ -220,6 +268,7 @@
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
       camera.position.set(0, 1.6, 5);
+      camera.rotation.order = 'YXZ';
 
       renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false, depth: true, preserveDrawingBuffer: false });
       const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -261,44 +310,89 @@
       addEventListener('keydown', handleKey(true));
       addEventListener('keyup', handleKey(false));
 
-      // Mouse / Pointer Lock
-      document.body.addEventListener('click', () => { if (!pointerLocked) renderer.domElement.requestPointerLock?.(); });
-      document.addEventListener('pointerlockchange', () => { pointerLocked = document.pointerLockElement === renderer.domElement; });
+ codex/optimize-gyroscope-system-for-fluidity
+      document.body.addEventListener('click', () => {
+        if (!pointerLocked) {
+          renderer.domElement.requestPointerLock();
+        }
+      });
+      document.addEventListener('pointerlockchange', () => {
+        pointerLocked = document.pointerLockElement === renderer.domElement;
+      });
       document.addEventListener('mousemove', (e) => {
-        if (pointerLocked && !useGyro) {
-          yaw   -= e.movementX * sensitivity;
-          pitch -= e.movementY * sensitivity;
-          const HALF_PI = Math.PI/2 - 1e-4;
-          pitch = Math.max(-HALF_PI, Math.min(HALF_PI, pitch));
+        if (pointerLocked) {
+          manualYaw -= e.movementX * sensitivity;
+          manualPitch -= e.movementY * sensitivity;
+          const maxManualPitch = Math.PI / 2 - 0.01;
+          manualPitch = Math.max(-maxManualPitch, Math.min(maxManualPitch, manualPitch));
         }
       });
 
-      // Sensores: só iniciamos listeners após permissão
-      // (enableDeviceOrientation chama o addEventListener)
+      window.addEventListener('deviceorientation', handleDeviceOrientation, { passive: true });
 
-      // HUD inicial
+      ensureCountdownSprite();
+      countdownSprite.visible = false;
       fillEl.style.width = '0%';
-      inputModeEl.textContent = 'Toque em "Ativar sensores" no celular';
     }
 
-    function onResize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight, false);
-    }
+    function handleDeviceOrientation(event) {
+      if (!gyroEnabled) return;
+      const { alpha, beta, gamma } = event;
+      if (alpha === null || beta === null || gamma === null) return;
 
-    function activateGame() {
-      if (gameStarted) return;
-      gameStarted = true; gameActive = true; last = performance.now();
-      statusEl.textContent = 'Equilibre-se (R para recentrar heading)';
-    }
+      lastGyroUpdate = performance.now();
+      gyroActive = true;
 
-    // ===== Loop & Atualizações =====
-    let last = performance.now();
-    let frameCount = 0; let fpsAccumulator = 0;
+      const alphaRad = THREE.MathUtils.degToRad(alpha || 0);
+      const betaRad = THREE.MathUtils.degToRad(beta || 0);
+      const gammaRad = THREE.MathUtils.degToRad(gamma || 0);
+      const orientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+      const orientRad = THREE.MathUtils.degToRad(orientation || 0);
+
+      gyroEuler.set(betaRad, alphaRad, -gammaRad, 'YXZ');
+      gyroQuaternion.setFromEuler(gyroEuler);
+      gyroQuaternion.multiply(q1);
+      gyroQuaternion.multiply(q0.setFromAxisAngle(zee, -orientRad));
+      gyroEuler.setFromQuaternion(gyroQuaternion, 'YXZ');
+
+      let rawPitch = gyroEuler.x;
+      let rawYaw = gyroEuler.y;
+      let rawRoll = gyroEuler.z;
+
+      if (!Number.isFinite(rawPitch) || !Number.isFinite(rawYaw) || !Number.isFinite(rawRoll)) {
+        return;
+      }
+
+      if (!calibrationDone) {
+        calibrationSamples.push({ pitch: rawPitch, yaw: rawYaw, roll: rawRoll });
+        if (calibrationSamples.length >= 30) {
+          let pitchSum = 0;
+          let yawSum = 0;
+          let rollSum = 0;
+          for (const sample of calibrationSamples) {
+            pitchSum += sample.pitch;
+            yawSum += sample.yaw;
+            rollSum += sample.roll;
+          }
+          pitchOffset = pitchSum / calibrationSamples.length;
+          yawOffset = yawSum / calibrationSamples.length;
+          rollOffset = rollSum / calibrationSamples.length;
+          calibrationSamples.length = 0;
+          calibrationDone = true;
+        }
+        return;
+      }
+
+      rawPitch -= pitchOffset;
+      rawYaw -= yawOffset;
+      rawRoll -= rollOffset;
+
+      gyroTarget.pitch = THREE.MathUtils.clamp(rawPitch, -Math.PI / 2, Math.PI / 2);
+      gyroTarget.yaw = normalizeAngle(rawYaw);
+      gyroTarget.roll = THREE.MathUtils.clamp(rawRoll, -Math.PI, Math.PI);
+    }
 
     function update(dt) {
-      // Drift do equilíbrio (desafio)
       driftTimer -= dt;
       if (driftTimer <= 0) {
         driftTimer = 1 + Math.random() * 1.5;
@@ -306,9 +400,10 @@
       }
       drift += (driftTarget - drift) * (1 - Math.pow(0.001, dt));
 
-      // Controle A/D
-      let control = 0;
-      if (keys.a) control -= 1; if (keys.d) control += 1;
+      let control = gyroControl;
+      if (keys.a) control -= 1;
+      if (keys.d) control += 1;
+      control = Math.max(-1, Math.min(1, control));
 
       angVel += (drift * 0.5 + control * baseControlPower) * dt;
       angVel *= Math.pow(damping, dt * 60);
@@ -324,55 +419,44 @@
       if (Math.abs(angle) > maxAngle) return gameOver(false);
       if (progress >= 1) return gameOver(true);
     }
-
-    function applyView(dt) {
-      if (useGyro && gyroAvailable) {
-        // Suavização por slerp para evitar jitter, mas mantendo resposta 1:1 perceptiva
-        // Fator de suavização ajustável conforme FPS
-        const lerpFactor = Math.min(1, dt * 20); // responde rápido mas filtra ruído
-        smoothedQuat.slerp(deviceQuat, lerpFactor);
-        finalQuat.copy(smoothedQuat);
-        // Aplicar roll do personagem (equilíbrio) no eixo Z da câmera
-        const rollQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), angle);
-        finalQuat.multiply(rollQ);
-        camera.quaternion.copy(finalQuat);
-      } else {
-        // Modo mouse/desktop
-        camera.rotation.set(pitch, yaw, angle, 'YXZ');
-      }
-    }
-
-    function adaptiveResolution(dt) {
-      // Mede FPS médio a cada ~1.5s e ajusta DPR para buscar targetFPS
-      frameCount++; fpsAccumulator += dt;
-      adaptiveTimer += dt;
-      if (adaptiveTimer >= 1.5) {
-        const avgDt = fpsAccumulator / frameCount;
-        const fps = 1 / Math.max(0.001, avgDt);
-        const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-        const dprCap = isMobile ? DPR_CAP_MOBILE : DPR_CAP_DESKTOP;
-        let current = Math.min(window.devicePixelRatio || 1, dprCap);
-        let newDpr = current;
-        if (fps < targetFPS * 0.8 && current > 0.8) newDpr = Math.max(0.8, current - 0.1);
-        else if (fps > targetFPS * 1.05 && current < dprCap) newDpr = Math.min(dprCap, current + 0.1);
-        if (Math.abs(newDpr - current) >= 0.09) {
-          renderer.setPixelRatio(newDpr);
-          renderer.setSize(window.innerWidth, window.innerHeight, false);
-        }
-        frameCount = 0; fpsAccumulator = 0; adaptiveTimer = 0;
-      }
-    }
-
-    function animate(now) {
+    let last = performance.now();
+    function animate() {
       if (gameOverFlag) return;
       requestAnimationFrame(animate);
-      const t = now || performance.now();
-      const dt = Math.min(0.05, (t - last) / 1000); // clamp dt
-      last = t;
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
 
-      if (gameActive) update(dt);
-      applyView(dt);
-      adaptiveResolution(dt);
+      const gyroFresh = gyroActive && (now - lastGyroUpdate) < 800;
+      if (gyroFresh) {
+        const smoothingStrength = 1 - Math.pow(1 - gyroSmoothing, dt * 60);
+        gyroCurrent.pitch += (gyroTarget.pitch - gyroCurrent.pitch) * smoothingStrength;
+        gyroCurrent.roll += (gyroTarget.roll - gyroCurrent.roll) * smoothingStrength;
+        gyroCurrent.yaw = smoothAngle(gyroCurrent.yaw, gyroTarget.yaw, smoothingStrength);
+        gyroControl = Math.max(-1, Math.min(1, gyroCurrent.roll / gyroControlScale));
+      } else {
+        const decay = Math.min(1, dt * 6);
+        gyroCurrent.pitch *= 1 - decay;
+        gyroCurrent.roll *= 1 - decay;
+        gyroCurrent.yaw *= 1 - decay;
+        gyroControl += (-gyroControl) * decay;
+        if (gyroActive && (now - lastGyroUpdate) > 3000) {
+          gyroActive = false;
+          resetGyroCalibration();
+        }
+      }
+
+      if (gameActive) {
+        update(dt);
+      }
+
+      const yawContribution = gyroFresh ? gyroCurrent.yaw : 0;
+      const pitchContribution = gyroFresh ? gyroCurrent.pitch : 0;
+      const maxPitch = Math.PI / 2 - 0.01;
+      const combinedPitch = Math.max(-maxPitch, Math.min(maxPitch, manualPitch + pitchContribution));
+      const combinedYaw = normalizeAngle(manualYaw + yawContribution);
+
+      camera.rotation.set(combinedPitch, combinedYaw, angle, 'YXZ');
       renderer.render(scene, camera);
     }
 

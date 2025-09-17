@@ -2,46 +2,55 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Balanço na Corda 3D</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Balanço na Corda 3D — Otimizado</title>
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; background: black; font-family: system-ui, sans-serif; }
-    canvas { display: block; }
-    #hud { position: fixed; top: 0; left: 0; right: 0; padding: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
-    .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    canvas { display: block; touch-action: none; }
+    #hud { position: fixed; inset: 0 auto auto 0; right: 0; padding: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; z-index: 10; }
+    .bar { flex: 1; min-width: 160px; height: 8px; background: rgba(255,255,255,0.15); border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, #7bdcff, #91ffb1); width: 0%; }
-    .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; }
-    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10,12,24,0.55); color: white; text-align: center; opacity: 1; transition: opacity 0.6s ease; backdrop-filter: blur(8px); }
+    .chip { background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 999px; font-size: 12px; color: #eaf6ff; white-space: nowrap; }
+
+    #overlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(10,12,24,0.55); color: white; text-align: center; opacity: 1; transition: opacity 0.6s ease; backdrop-filter: blur(8px); z-index: 20; }
     #overlay.fade-out { opacity: 0; pointer-events: none; }
-    #panel { background: rgba(6,10,18,0.75); padding: 24px; border-radius: 16px; max-width: 600px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 18px 40px rgba(0,0,0,0.35); }
+    #panel { background: rgba(6,10,18,0.78); padding: 24px; border-radius: 16px; max-width: min(640px, 92vw); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 18px 40px rgba(0,0,0,0.35); }
     button { margin-top: 12px; padding: 12px 18px; background: linear-gradient(135deg, #2a4dff, #23b5ff); color: #f4f9ff; border: none; border-radius: 999px; cursor: pointer; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 10px 25px rgba(0,0,0,0.25); transition: transform 0.2s ease, box-shadow 0.2s ease; }
     button:hover { transform: translateY(-1px); box-shadow: 0 14px 32px rgba(0,0,0,0.3); }
     button:disabled { opacity: 0.6; cursor: default; }
     [hidden] { display: none !important; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    small.hint { color: #cfe9ff; opacity: .9; display: block; margin-top: 8px; }
   </style>
 </head>
 <body>
   <div id="hud">
-    <div class="chip">Use A/D ou mova o celular</div>
+    <div class="chip" id="inputMode">Toque em "Ativar sensores" no celular</div>
     <div class="bar"><div class="fill" id="fill"></div></div>
     <div class="chip" id="status">Pronto</div>
   </div>
 
   <div id="overlay">
     <div id="panel">
-      <h1>Balanço na Corda 3D</h1>
-      <p>Você está em uma corda suspensa sobre um desfiladeiro. O movimento para frente é automático.<br>
-      O equilíbrio vai se perdendo sozinho — use <b>A</b> e <b>D</b> no PC ou mova o celular para corrigir.<br>
-      Agora você também pode usar o <b>mouse</b> ou o <b>giroscópio</b> para olhar em volta.</p>
-      <button id="play">Jogar</button>
+      <h1>Balanço na Corda 3D — Otimizado</h1>
+      <p>
+        • PC: use <b>A</b>/<b>D</b> para equilibrar e <b>mouse</b> para olhar.<br>
+        • Celular: use o <b>giroscópio</b> para olhar 1:1 e incline para equilibrar.
+      </p>
+      <div class="row">
+        <button id="play">Jogar</button>
+        <button id="enableSensors">Ativar sensores</button>
+      </div>
+      <small class="hint">No iOS é necessário autorizar o acesso ao movimento/orientação do dispositivo.</small>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
   (() => {
+    // ===== Estado base =====
     let scene, camera, renderer, rope, floor;
-    let angle = 0, angVel = 0;
+    let angle = 0, angVel = 0; // roll do personagem (equilíbrio na corda)
     const maxAngle = 0.5;
     const damping = 0.985;
     const baseControlPower = 1.5;
@@ -51,8 +60,10 @@
 
     const overlay = document.getElementById('overlay');
     const playBtn = document.getElementById('play');
+    const enableBtn = document.getElementById('enableSensors');
     const fillEl = document.getElementById('fill');
     const statusEl = document.getElementById('status');
+    const inputModeEl = document.getElementById('inputMode');
 
     let progress = 0;
     const baseSpeed = 0.05;
@@ -110,25 +121,19 @@
       statusEl.textContent = 'Prepare-se';
       let fadeHandled = false;
 
+    function startGameSequence() {
+      statusEl.textContent = 'Prepare-se';
+      let finished = false;
       const finalizeFade = () => {
-        if (fadeHandled) return;
-        fadeHandled = true;
-        overlay.hidden = true;
-        overlay.classList.remove('fade-out');
+        if (finished) return; finished = true;
+        overlay.hidden = true; overlay.classList.remove('fade-out');
         overlay.removeEventListener('transitionend', handleFadeEnd);
-        if (fadeTimeoutId) {
-          clearTimeout(fadeTimeoutId);
-          fadeTimeoutId = null;
-        }
-        startCountdown();
+        activateGame();
       };
-
       const handleFadeEnd = (event) => {
-        if (event.target === overlay && event.propertyName === 'opacity') {
-          finalizeFade();
-        }
+        if (event.target === overlay && event.propertyName === 'opacity') finalizeFade();
       };
-
+      
       fadeTimeoutId = setTimeout(finalizeFade, fadeDuration + 80);
       overlay.addEventListener('transitionend', handleFadeEnd);
       overlay.classList.add('fade-out');
@@ -252,54 +257,60 @@
       }, 1000);
     }
 
-    function activateGame() {
-      if (gameStarted) return;
-      gameStarted = true;
-      gameActive = true;
-      last = performance.now();
-      statusEl.textContent = 'Equilibre-se';
+    function attemptFullscreen() {
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+      if (req) try { req.call(el); } catch {}
     }
 
+    // ===== Setup =====
     function init() {
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
       camera.position.set(0, 1.6, 5);
       camera.rotation.order = 'YXZ';
 
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false, depth: true, preserveDrawingBuffer: false });
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const dprCap = isMobile ? DPR_CAP_MOBILE : DPR_CAP_DESKTOP;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.0;
       document.body.appendChild(renderer.domElement);
 
-      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-      scene.add(light);
+      // Luz leve (barata)
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x323232, 1.0);
+      scene.add(hemi);
 
+      // Chão wireframe (barato)
       const floorGeo = new THREE.PlaneGeometry(200, 200, 20, 20);
-      const floorMat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
+      const floorMat = new THREE.MeshBasicMaterial({ color: 0x202040, wireframe: true });
       floor = new THREE.Mesh(floorGeo, floorMat);
       floor.rotation.x = -Math.PI / 2;
       floor.position.y = -5;
       scene.add(floor);
 
+      // Corda
       const ropeGeo = new THREE.BoxGeometry(0.1, 0.05, 100);
-      const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
+      const ropeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.1, roughness: 0.8 });
       rope = new THREE.Mesh(ropeGeo, ropeMat);
       scene.add(rope);
 
-      window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      });
+      // Eventos de janela
+      window.addEventListener('resize', onResize);
 
+      // Teclado
       const handleKey = (isPressed) => (event) => {
         const key = event.key.toLowerCase();
-        if (key in keys) {
-          keys[key] = isPressed;
-        }
+        if (key in keys) keys[key] = isPressed;
+        if (isPressed && key === 'r') recenterHeading();
       };
       addEventListener('keydown', handleKey(true));
       addEventListener('keyup', handleKey(false));
 
+ codex/optimize-gyroscope-system-for-fluidity
       document.body.addEventListener('click', () => {
         if (!pointerLocked) {
           renderer.domElement.requestPointerLock();
@@ -397,16 +408,17 @@
       angVel += (drift * 0.5 + control * baseControlPower) * dt;
       angVel *= Math.pow(damping, dt * 60);
       angle += angVel * dt;
+
+      // movimento para frente
       camera.position.z -= 2 * dt;
 
       progress = Math.min(1, progress + baseSpeed * dt);
       fillEl.style.width = (progress * 100).toFixed(1) + '%';
-      statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : 'Equilibre-se';
+      statusEl.textContent = Math.abs(angle) >= maxAngle * 0.8 ? 'Perigo!' : (useGyro ? 'Giroscópio 1:1' : 'Equilibre-se');
 
       if (Math.abs(angle) > maxAngle) return gameOver(false);
       if (progress >= 1) return gameOver(true);
     }
-
     let last = performance.now();
     function animate() {
       if (gameOverFlag) return;
@@ -448,29 +460,29 @@
       renderer.render(scene, camera);
     }
 
-    init();
-    animate();
-
     function gameOver(win) {
-      gameOverFlag = true;
-      gameActive = false;
-      if (countdownTimerId) {
-        clearInterval(countdownTimerId);
-        countdownTimerId = null;
-      }
-      if (countdownHideTimeoutId) {
-        clearTimeout(countdownHideTimeoutId);
-        countdownHideTimeoutId = null;
-      }
-      if (countdownSprite) {
-        countdownSprite.visible = false;
-      }
-      overlay.hidden = false;
-      overlay.classList.remove('fade-out');
+      gameOverFlag = true; gameActive = false;
+      overlay.hidden = false; overlay.classList.remove('fade-out');
       document.getElementById('panel').innerHTML = win
         ? '<h1>Você conseguiu!</h1><p>Chegou ao fim da corda.</p><button onclick="location.reload()">Recomeçar</button>'
-        : '<h1>Você caiu!</h1><p>Perdeu o equilíbrio e caiu na lava.</p><button onclick="location.reload()">Recomeçar</button>';
+        : '<h1>Você caiu!</h1><p>Perdeu o equilíbrio.</p><button onclick="location.reload()">Recomeçar</button>';
     }
+
+    // ===== Start =====
+    init();
+    requestAnimationFrame(animate);
+
+    // Recentrar heading por gesto (toque com dois dedos)
+    let touchCount = 0; let touchTimer = null;
+    window.addEventListener('touchstart', (e) => {
+      touchCount = e.touches.length;
+      if (touchCount >= 2) {
+        if (touchTimer) clearTimeout(touchTimer);
+        touchTimer = setTimeout(() => { recenterHeading(); }, 300);
+      }
+    }, { passive: true });
+    window.addEventListener('touchend', () => { if (touchTimer) { clearTimeout(touchTimer); touchTimer = null; } }, { passive: true });
+
   })();
   </script>
 </body>

@@ -174,7 +174,7 @@
   };
 
   // ===== Estado
-  let running=false, rafId=0, lastSample=0; const sampleHz=10, sampleInterval=1000/sampleHz;
+  let running=false, rafId=0, lastSample=0; const sampleHz=2, sampleInterval=1000/sampleHz;
   let raw={ alpha:0,beta:0,gamma:0, absolute:false };
   let screenAngle=getScreenAngle();
   let qCal=[1,0,0,0]; // referência de calibração ("frente")
@@ -291,3 +291,4 @@
 </script>
 </body>
 </html>
+

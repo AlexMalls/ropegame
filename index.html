@@ -112,7 +112,10 @@
     function startEngine({useGyro=false}={}){
       engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer:false, stencil:true, disableWebGL2Support:false });
       scene = new BABYLON.Scene(engine);
-      scene.clearColor = new BABYLON.Color4(0,0,0,1); // cenário 100% preto
+      $1
+      // Luz ambiente global para clarear a cena
+      scene.ambientColor = new BABYLON.Color3(0.2, 0.2, 0.25);
+ // cenário 100% preto
 
       // Choose camera according to capability
       if (useGyro){
@@ -132,7 +135,7 @@
       // === Luz e geometria básica ===
       // Luz ambiente suave para a sala escura
       const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
-      hemi.intensity = 1;
+      hemi.intensity = 1.0;
 
       // Uma luz pontual fraca acima da câmera para dar contraste
       const point = new BABYLON.PointLight('point', new BABYLON.Vector3(0, 2.5, 1.5), scene);
@@ -177,4 +180,3 @@
   </script>
 </body>
 </html>
-

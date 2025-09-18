@@ -102,7 +102,7 @@
     </aside>
   </main>
 
-  <footer>© Tester Gyro v1.5</footer>
+  <footer>© Tester Gyro v1.6</footer>
 </div>
 
 <div class="modal" id="debug-modal">
@@ -162,7 +162,7 @@
   let raw={ alpha:0,beta:0,gamma:0, absolute:false };
   let screenAngle=getScreenAngle();
   let qCal=[1,0,0,0];
-  const logs={ meta:{ version:'1.5', startedAt:null, endedAt:null, sampleHz }, device:[], interpreted:[] };
+  const logs={ meta:{ version:'1.6', startedAt:null, endedAt:null, sampleHz }, device:[], interpreted:[] };
 
   function getScreenAngle(){ if(screen.orientation&&typeof screen.orientation.angle==='number') return screen.orientation.angle; return typeof window.orientation==='number'?window.orientation:0; }
   window.addEventListener('orientationchange',()=>{screenAngle=getScreenAngle();});
@@ -176,34 +176,40 @@
   function currentCalibratedQuat(){ return qMul(qConj(qCal),computeCurrentQuat()); }
   btnCal.addEventListener('click',()=>{ qCal=computeCurrentQuat(); status.textContent='Recalibrado: posição atual = Frente.'; });
 
-  function faceFrom(yaw, pitch) {
-    // Pitch controla Cima/Baixo
-    if (pitch > 140) return 'Cima';
-    if (pitch < 20) return 'Baixo';
-  
-    // Yaw controla Esquerda/Direita
-    if (yaw > 45) return 'Esquerda';
-    if (yaw < -45) return 'Direita';
-  
-    // Posição neutra
-    return 'Frente';
-  }
-
   function tick(ts){
     if(!running) return;
     const qRel=currentCalibratedQuat();
-    const ypr=quatToYPR(qRel);
-    world.style.transform=`rotateZ(${-ypr.yaw}deg) rotateX(${-ypr.pitch}deg) rotateY(${ypr.roll}deg)`;
-    const face=faceFrom(ypr.yaw,ypr.pitch);
+    let { yaw, pitch, roll }=quatToYPR(qRel);
+
+    // ===== Ajustes manuais conforme suas anotações =====
+    // Pitch controla Cima/Baixo
+    // Yaw controla Esquerda/Direita
+    // Inverter yaw para que +100 seja Esquerda, -100 seja Direita
+    yaw = -yaw;
+
+    // Normalizar ângulos
+    yaw = normalizeDeg(yaw);
+    pitch = normalizeDeg(pitch);
+    roll = normalizeDeg(roll);
+
+    world.style.transform=`rotateZ(${-yaw}deg) rotateX(${-pitch}deg) rotateY(${roll}deg)`;
+
+    let face="Frente";
+    if(pitch > 140) face="Cima";
+    else if(pitch < 20) face="Baixo";
+    else if(yaw > 45) face="Esquerda";
+    else if(yaw < -45) face="Direita";
+
     h.alpha.textContent=raw.alpha.toFixed(1);
     h.beta.textContent=raw.beta.toFixed(1);
     h.gamma.textContent=raw.gamma.toFixed(1);
-    h.yaw.textContent=ypr.yaw.toFixed(1);
-    h.pitch.textContent=ypr.pitch.toFixed(1);
-    h.roll.textContent=ypr.roll.toFixed(1);
+    h.yaw.textContent=yaw.toFixed(1);
+    h.pitch.textContent=pitch.toFixed(1);
+    h.roll.textContent=roll.toFixed(1);
     h.face.textContent=face;
     orientationEl.textContent=(Math.abs(screenAngle)===90)?'Paisagem':'Retrato';
-    if(ts-lastSample>=sampleInterval){ lastSample=ts; const t=Date.now(); logs.device.push({t,alpha:raw.alpha,beta:raw.beta,gamma:raw.gamma,absolute:raw.absolute,screenAngle}); logs.interpreted.push({t,yaw:ypr.yaw,pitch:ypr.pitch,roll:ypr.roll,face,orientation:(Math.abs(screenAngle)===90)?'landscape':'portrait'}); }
+
+    if(ts-lastSample>=sampleInterval){ lastSample=ts; const t=Date.now(); logs.device.push({t,alpha:raw.alpha,beta:raw.beta,gamma:raw.gamma,absolute:raw.absolute,screenAngle}); logs.interpreted.push({t,yaw,pitch,roll,face,orientation:(Math.abs(screenAngle)===90)?'landscape':'portrait'}); }
     rafId=requestAnimationFrame(tick);
   }
 
@@ -215,5 +221,3 @@
 </script>
 </body>
 </html>
-
-

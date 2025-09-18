@@ -1,212 +1,184 @@
-<!doctype html>
-<html lang="pt-BR">
+<!DOCTYPE html>
+<html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Giroscópio Tester – 1ª Pessoa (Câmera)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <title>Sala 3D – Giroscópio</title>
   <style>
-    :root {
-      --bg: #0b0f14;
-      --panel: #121821;
-      --text: #e7eef7;
-      --muted: #94a3b8;
-      --accent: #60a5fa;
-      --danger: #f87171;
-      --warn: #fbbf24;
-      --radius: 12px;
-      --cube: 800px; /* maior, já que o usuário estará dentro */
+    html, body { height:100%; margin:0; background:#000; overflow:hidden; }
+    #hud {
+      position: fixed; inset: 0 0 auto 0; display:flex; gap:.5rem; padding:.5rem;
+      align-items:center; justify-content:center; pointer-events:none;
     }
-    * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
-
-    .app { display: flex; flex-direction: column; height: 100%; }
-
-    header { display:flex; flex-direction: column; gap: 6px; align-items:center; justify-content:center; padding: 8px; background: var(--panel); position: sticky; top:0; z-index: 10; }
-    header h1 { font-size: 14px; margin:0; font-weight:600; text-align: center; }
-    .controls { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; }
-    button { flex: 1 1 auto; min-width: 100px; border:none; border-radius:8px; padding:8px; font-weight:600; cursor:pointer; color:#fff; font-size:13px; }
-    button.primary { background: #2563eb; }
-    button.success { background: #059669; }
-    button.warn { background: #f59e0b; color:#000; }
-    button.danger { background: #dc2626; }
-
-    .statusbar { text-align:center; font-size: 12px; color: var(--muted); }
-
-    main { flex:1; display:flex; flex-direction: column; padding: 0; gap:0; }
-
-    .viewport-wrap { flex:1; position: relative; overflow:hidden; }
-    .viewport { position: absolute; inset: 0; perspective: 1200px; }
-    .world { position:absolute; inset:0; transform-style: preserve-3d; }
-
-    .cube { position:absolute; top:50%; left:50%; transform-style: preserve-3d; width: var(--cube); height: var(--cube); transform: translate(-50%, -50%); }
-    .face { position:absolute; width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size: clamp(22px, 6vw, 32px); font-weight:800; color:#fff; background: rgba(21,30,45,.9); border:2px solid rgba(255,255,255,.1); }
-    .front  { transform: rotateY(0deg) translateZ(calc(var(--cube) / 2)); }
-    .back   { transform: rotateY(180deg) translateZ(calc(var(--cube) / 2)); }
-    .right  { transform: rotateY(90deg) translateZ(calc(var(--cube) / 2)); }
-    .left   { transform: rotateY(-90deg) translateZ(calc(var(--cube) / 2)); }
-    .top    { transform: rotateX(90deg) translateZ(calc(var(--cube) / 2)); }
-    .bottom { transform: rotateX(-90deg) translateZ(calc(var(--cube) / 2)); }
-
-    .hud { position:absolute; bottom:0; left:0; right:0; background: rgba(0,0,0,.6); border-radius: 0; padding: 4px; font-size:11px; display: grid; grid-template-columns: repeat(3, 1fr); gap:2px; z-index:20; }
-    .hud h2 { grid-column: 1/-1; font-size: 12px; margin:0 0 2px; text-align:center; }
-    .kv { display:flex; justify-content:space-between; font-family: monospace; font-size:10px; }
-
-    footer { display:none; }
-
-    .modal { position: fixed; inset: 0; display:none; place-items:center; background: rgba(0,0,0,.7); z-index: 50; }
-    .modal.open { display:grid; }
-    .modal-card { width: 95vw; max-height: 85vh; background: var(--bg); border-radius: var(--radius); display:flex; flex-direction:column; overflow: hidden; }
-    .modal-body { padding: 6px; flex:1; overflow:auto; }
-    textarea { width: 100%; min-height: 60vh; border:none; background:#000; color:#0f0; font-family: monospace; font-size: 11px; padding: 6px; }
-    .modal-actions { display:flex; justify-content:space-around; padding: 6px; background: var(--panel); }
+    #btnPermissao, #btnDebug {
+      pointer-events:auto; font:600 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto;
+      padding:.6rem .9rem; border-radius:999px; border:none; background:#fff; cursor:pointer;
+    }
+    #btnDebug { background:#eee; }
+    #debug {
+      position: fixed; bottom:.5rem; left:.5rem; color:#fff; font:12px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background:rgba(0,0,0,.45); padding:.5rem .6rem; border-radius:.5rem; display:none; white-space:pre;
+    }
   </style>
 </head>
 <body>
-<div class="app">
-  <header>
-    <h1>Giroscópio Tester — Visão 1ª Pessoa</h1>
-    <div class="controls">
-      <button id="btn-permission" class="warn">Permitir</button>
-      <button id="btn-calibrate" class="success">Recalibrar</button>
-      <button id="btn-start" class="primary">Iniciar</button>
-      <button id="btn-stop" class="danger">Parar</button>
-    </div>
-    <div class="statusbar" id="status-text">Aguardando…</div>
-  </header>
-
-  <main>
-    <section class="viewport-wrap">
-      <div class="viewport" id="viewport">
-        <div class="world" id="world">
-          <div class="cube">
-            <div class="face front">Frente</div>
-            <div class="face back">Trás</div>
-            <div class="face right">Direita</div>
-            <div class="face left">Esquerda</div>
-            <div class="face top">Cima</div>
-            <div class="face bottom">Baixo</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <aside class="hud">
-      <h2>HUD</h2>
-      <div class="kv"><span>yaw</span><b id="yaw">—</b></div>
-      <div class="kv"><span>pitch</span><b id="pitch">—</b></div>
-      <div class="kv"><span>roll</span><b id="roll">—</b></div>
-      <div class="kv"><span>face</span><b id="face">—</b></div>
-      <div class="kv"><span>orientação</span><b id="orientation">—</b></div>
-    </aside>
-  </main>
-</div>
-
-<div class="modal" id="debug-modal">
-  <div class="modal-card">
-    <div class="modal-body">
-      <textarea id="debug-text" readonly></textarea>
-    </div>
-    <div class="modal-actions">
-      <button id="btn-copy" class="primary">Copiar</button>
-      <button id="btn-close-modal" class="danger">Fechar</button>
-    </div>
+  <div id="hud">
+    <button id="btnPermissao">Ativar giroscópio</button>
+    <button id="btnDebug" aria-pressed="false">Debug</button>
   </div>
-</div>
+  <div id="debug"></div>
+  <canvas id="c"></canvas>
 
-<script>
-(function(){
-  const deg2rad = d => d * Math.PI / 180;
-  const rad2deg = r => r * 180 / Math.PI;
-  function qMul(a,b){const[aw,ax,ay,az]=a,[bw,bx,by,bz]=b;return[aw*bw-ax*bx-ay*by-az*bz,aw*bx+ax*bw+ay*bz-az*by,aw*by-ax*bz+ay*bw+az*bx,aw*bz+ax*by-ay*bx+az*bw];}
-  function qConj(q){return[q[0],-q[1],-q[2],-q[3]];}
-  function eulerZXYToQuat(alpha,beta,gamma){
-    const z=deg2rad(alpha), x=deg2rad(beta), y=deg2rad(gamma);
-    const qz=[Math.cos(z/2),0,0,Math.sin(z/2)];
-    const qx=[Math.cos(x/2),Math.sin(x/2),0,0];
-    const qy=[Math.cos(y/2),0,Math.sin(y/2),0];
-    return qMul(qMul(qz,qx),qy);
-  }
-  function applyScreenQuat(q, angleDeg){
-    const z=deg2rad(-angleDeg);
-    const qz=[Math.cos(z/2),0,0,Math.sin(z/2)];
-    return qMul(q,qz);
-  }
-  function quatToYPR(q){
-    const [w,x,y,z]=q;
-    const siny_cosp=2*(w*z+x*y); const cosy_cosp=1-2*(y*y+z*z); const yaw=Math.atan2(siny_cosp,cosy_cosp);
-    const sinp=2*(w*y - z*x); const pitch=Math.abs(sinp)>=1?Math.sign(sinp)*Math.PI/2:Math.asin(sinp);
-    const sinr_cosp=2*(w*x + y*z); const cosr_cosp=1-2*(x*x + y*y); const roll=Math.atan2(sinr_cosp,cosr_cosp);
-    return { yaw:rad2deg(yaw), pitch:rad2deg(pitch), roll:rad2deg(roll) };
-  }
-  function normalizeDeg(a){ let d=a%360; if(d>180) d-=360; if(d<-180) d+=360; return d; }
+  <script type="module">
+    import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+    import { DeviceOrientationControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/DeviceOrientationControls.js";
 
-  const status=document.getElementById('status-text');
-  const world=document.getElementById('world');
-  const viewport=document.getElementById('viewport');
-  const debugModal=document.getElementById('debug-modal');
-  const debugText=document.getElementById('debug-text');
-  const orientationEl=document.getElementById('orientation');
-  const btnStart=document.getElementById('btn-start');
-  const btnStop=document.getElementById('btn-stop');
-  const btnPerm=document.getElementById('btn-permission');
-  const btnCal=document.getElementById('btn-calibrate');
-  const btnCopy=document.getElementById('btn-copy');
-  const btnClose=document.getElementById('btn-close-modal');
+    // --- Básico da cena ---
+    const canvas = document.getElementById('c');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    const scene = new THREE.Scene();
 
-  const h={ yaw:document.getElementById('yaw'), pitch:document.getElementById('pitch'), roll:document.getElementById('roll'), face:document.getElementById('face') };
+    const camera = new THREE.PerspectiveCamera(75, 2, 0.01, 100);
+    camera.position.set(0, 0, 0); // dentro da sala
+    scene.add(camera);
 
-  let running=false, rafId=0, lastSample=0; const sampleHz=2, sampleInterval=1000/sampleHz;
-  let raw={ alpha:0,beta:0,gamma:0, absolute:false };
-  let screenAngle=getScreenAngle();
-  let qCal=[1,0,0,0];
-  const logs={ meta:{ version:'1.6-camera', startedAt:null, endedAt:null, sampleHz }, device:[], interpreted:[] };
+    // --- Sala cúbica com texto em cada face ---
+    function faceTexture(label, bg='#444', fg='#fff') {
+      const size = 1024;
+      const cnv = document.createElement('canvas');
+      cnv.width = cnv.height = size;
+      const ctx = cnv.getContext('2d');
+      // fundo
+      ctx.fillStyle = bg;
+      ctx.fillRect(0,0,size,size);
+      // grade sutil pra sensação de parede
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      for (let i=0;i<=16;i++){
+        const p = Math.round((i/16)*size);
+        ctx.beginPath(); ctx.moveTo(p,0); ctx.lineTo(p,size); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0,p); ctx.lineTo(size,p); ctx.stroke();
+      }
+      // texto grande central
+      ctx.fillStyle = fg;
+      ctx.font = "bold 160px system-ui, -apple-system, Segoe UI, Roboto";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(0,0,0,.35)";
+      ctx.shadowBlur = 16;
+      ctx.fillText(label, size/2, size/2);
+      return new THREE.CanvasTexture(cnv);
+    }
 
-  function getScreenAngle(){ if(screen.orientation&&typeof screen.orientation.angle==='number') return screen.orientation.angle; return typeof window.orientation==='number'?window.orientation:0; }
-  window.addEventListener('orientationchange',()=>{screenAngle=getScreenAngle();});
+    const labels = [
+      { text: "DIREITA",  bg:"#2a4b8d" }, // +X
+      { text: "ESQUERDA", bg:"#8d2a2a" }, // -X
+      { text: "CIMA",     bg:"#2a8d4b" }, // +Y
+      { text: "BAIXO",    bg:"#8d7b2a" }, // -Y
+      { text: "FRENTE",   bg:"#5b2a8d" }, // +Z
+      { text: "TRÁS",     bg:"#2a8a8d" }, // -Z
+    ];
 
-  async function requestPermissionIfNeeded(){ if(!window.DeviceOrientationEvent) return true; if(typeof DeviceOrientationEvent.requestPermission==='function'){ try{ return (await DeviceOrientationEvent.requestPermission())==='granted'; }catch{return false;} } return true; }
-  btnPerm.addEventListener('click',async()=>{const ok=await requestPermissionIfNeeded();status.textContent=ok?'Permissão concedida.':'Permissão negada.';});
+    const materials = labels.map(({text,bg}) => new THREE.MeshBasicMaterial({
+      map: faceTexture(text, bg, "#ffffff"), side: THREE.BackSide
+    }));
 
-  window.addEventListener('deviceorientation',(e)=>{ if(typeof e.alpha==='number') raw.alpha=e.alpha; if(typeof e.beta==='number') raw.beta=e.beta; if(typeof e.gamma==='number') raw.gamma=e.gamma; raw.absolute=!!e.absolute; },{passive:true});
+    const room = new THREE.Mesh(new THREE.BoxGeometry(10,10,10), materials);
+    scene.add(room);
 
-  function computeCurrentQuat(){ return applyScreenQuat(eulerZXYToQuat(raw.alpha,raw.beta,raw.gamma),screenAngle); }
-  function currentCalibratedQuat(){ return qMul(qConj(qCal),computeCurrentQuat()); }
-  btnCal.addEventListener('click',()=>{ qCal=computeCurrentQuat(); status.textContent='Recalibrado: posição atual = Frente.'; });
+    // --- Luz ambiente sutil (não afeta MeshBasic, mas caso troque o material) ---
+    scene.add(new THREE.AmbientLight(0xffffff, 0.2));
 
-  function tick(ts){
-    if(!running) return;
-    const qRel=currentCalibratedQuat();
-    let { yaw, pitch, roll }=quatToYPR(qRel);
+    // --- Controles por giroscópio (rotaciona a CÂMERA) ---
+    const controls = new DeviceOrientationControls(camera);
+    controls.enabled = false; // só liga após permissão
 
-    yaw = -yaw; // inverter yaw conforme esperado
-    yaw = normalizeDeg(yaw);
-    pitch = normalizeDeg(pitch);
-    roll = normalizeDeg(roll);
+    // iOS precisa de permissão via gesto do usuário
+    const btn = document.getElementById('btnPermissao');
+    btn.addEventListener('click', async () => {
+      try {
+        if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          const resp = await DeviceOrientationEvent.requestPermission();
+          if (resp !== 'granted') throw new Error('Permissão negada');
+        }
+        controls.enabled = true;
+        btn.textContent = "Giroscópio ativo";
+        btn.disabled = true;
+      } catch (err) {
+        alert("Não foi possível ativar o giroscópio: " + err.message);
+      }
+    });
 
-    // Em vez de rotacionar o cubo, rotacionamos a câmera (viewport)
-    viewport.style.transform=`rotateZ(${roll}deg) rotateX(${pitch}deg) rotateY(${yaw}deg)`;
+    // --- Debug opcional (mostra yaw/pitch/roll da câmera) ---
+    const debugDiv = document.getElementById('debug');
+    const btnDebug = document.getElementById('btnDebug');
+    btnDebug.addEventListener('click', () => {
+      const on = debugDiv.style.display !== 'block';
+      debugDiv.style.display = on ? 'block' : 'none';
+      btnDebug.setAttribute('aria-pressed', String(on));
+    });
 
-    let face="Frente";
-    if(pitch > 140) face="Cima";
-    else if(pitch < 20) face="Baixo";
-    else if(yaw > 45) face="Esquerda";
-    else if(yaw < -45) face="Direita";
+    function eulerFromCamera(cam){
+      // Converte a orientação da câmera para Yaw (Y), Pitch (X), Roll (Z) em graus
+      const e = new THREE.Euler().setFromQuaternion(cam.quaternion, 'YXZ');
+      const toDeg = r => THREE.MathUtils.radToDeg(r);
+      let yaw = toDeg(e.y), pitch = toDeg(e.x), roll = toDeg(e.z);
+      // normaliza para [-180,180]
+      const norm = v => ((v+180)%360+360)%360-180;
+      return { yaw: norm(yaw), pitch: norm(pitch), roll: norm(roll) };
+    }
 
-    h.yaw.textContent=yaw.toFixed(1);
-    h.pitch.textContent=pitch.toFixed(1);
-    h.roll.textContent=roll.toFixed(1);
-    h.face.textContent=face;
-    orientationEl.textContent=(Math.abs(screenAngle)===90)?'Paisagem':'Retrato';
+    // --- Resize ---
+    function resizeRendererToDisplaySize() {
+      const { clientWidth, clientHeight } = renderer.domElement;
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      if (clientWidth !== width || clientHeight !== height) {
+        renderer.setSize(width, height, false);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+      }
+    }
+    window.addEventListener('resize', resizeRendererToDisplaySize);
+    resizeRendererToDisplaySize();
 
-    if(ts-lastSample>=sampleInterval){ lastSample=ts; const t=Date.now(); logs.device.push({t,alpha:raw.alpha,beta:raw.beta,gamma:raw.gamma,absolute:raw.absolute,screenAngle}); logs.interpreted.push({t,yaw,pitch,roll,face,orientation:(Math.abs(screenAngle)===90)?'landscape':'portrait'}); }
-    rafId=requestAnimationFrame(tick);
-  }
+    // --- Loop ---
+    renderer.setAnimationLoop(() => {
+      resizeRendererToDisplaySize();
+      // Atualiza orientação da câmera a partir do giroscópio
+      if (controls.enabled) controls.update();
 
-  btnStart.onclick=async()=>{ const ok=await requestPermissionIfNeeded(); if(!ok){status.textContent='Permissão negada.';return;} running=true; logs.device.length=0; logs.interpreted.length=0; logs.meta.startedAt=new Date().toISOString(); logs.meta.endedAt=null; lastSample=performance.now(); status.textContent='Gravando…'; if(document.documentElement.requestFullscreen){document.documentElement.requestFullscreen();} rafId=requestAnimationFrame(tick); };
-  btnStop.onclick=()=>{ if(!running) return; running=false; cancelAnimationFrame(rafId); logs.meta.endedAt=new Date().toISOString(); status.textContent='Parado'; const payload={meta:logs.meta,device:logs.device,interpreted:logs.interpreted}; debugText.value=JSON.stringify(payload,null,2); debugModal.classList.add('open'); };
-  btnClose.onclick=()=>debugModal.classList.remove('open');
-  btnCopy.onclick=()=>navigator.clipboard.writeText(debugText.value);
-})();
-</script>
+      // Atualiza debug
+      if (debugDiv.style.display === 'block') {
+        const { yaw, pitch, roll } = eulerFromCamera(camera);
+        debugDiv.textContent =
+`Yaw (Y/esquerda-direita): ${yaw.toFixed(1)}°
+Pitch (X/cima-baixo):     ${pitch.toFixed(1)}°
+Roll (Z/rolagem):         ${roll.toFixed(1)}°`;
+      }
+
+      renderer.render(scene, camera);
+    });
+
+    // --- Suporte simples a mouse (desktop) para testar: arraste para girar ---
+    // Não interfere no giroscópio; útil se abrir no PC.
+    (function enableMouseLook(){
+      let dragging = false, sx=0, sy=0, yaw=0, pitch=0;
+      const tmp = new THREE.Euler(0,0,0,'YXZ');
+      window.addEventListener('pointerdown', e => { dragging=true; sx=e.clientX; sy=e.clientY; });
+      window.addEventListener('pointerup',   () => dragging=false);
+      window.addEventListener('pointermove', e => {
+        if (!dragging || controls.enabled) return; // se giroscopio ativo, ignora mouse
+        const dx = (e.clientX - sx) * 0.003;
+        const dy = (e.clientY - sy) * 0.003;
+        sx = e.clientX; sy = e.clientY;
+        yaw   += dx;
+        pitch += dy;
+        pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+        tmp.set(pitch, yaw, 0);
+        camera.quaternion.setFromEuler(tmp);
+      });
+    })();
+  </script>
 </body>
 </html>

@@ -129,6 +129,40 @@
       camera.speed = 0; // evita deslocamento
       camera.keysUp = camera.keysDown = camera.keysLeft = camera.keysRight = [];
 
+      // === Luz e geometria básica ===
+      // Luz ambiente suave para a sala escura
+      const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
+      hemi.intensity = 0.35;
+
+      // Uma luz pontual fraca acima da câmera para dar contraste
+      const point = new BABYLON.PointLight('point', new BABYLON.Vector3(0, 2.5, 1.5), scene);
+      point.intensity = 0.5;
+
+      // Sala: caixa invertida para olharmos de dentro (10m)
+      const room = BABYLON.MeshBuilder.CreateBox('room', { size: 10, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
+      const roomMat = new BABYLON.StandardMaterial('roomMat', scene);
+      roomMat.diffuseColor = new BABYLON.Color3(0.05, 0.06, 0.08); // quase preta
+      roomMat.specularColor = new BABYLON.Color3(0, 0, 0);
+      room.material = roomMat;
+
+      // Cubo de referência "de pedra" no lado oposto da sala
+      const ref = BABYLON.MeshBuilder.CreateBox('ref', { size: 1 }, scene);
+      ref.position = new BABYLON.Vector3(0, 1, -3.5);
+      const refMat = new BABYLON.StandardMaterial('refMat', scene);
+      refMat.diffuseColor = new BABYLON.Color3(0.25, 0.25, 0.28);
+      refMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
+      refMat.emissiveColor = new BABYLON.Color3(0.01, 0.01, 0.015); // levemente visível na escuridão
+      try {
+        refMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/stone.jpg', scene);
+      } catch (e) { /* se falhar, fica só a cor difusa */ }
+      ref.material = refMat;
+
+      // Parâmetros de câmera
+      camera.minZ = 0.05;
+      camera.maxZ = 100;
+      camera.fov = BABYLON.Tools.ToRadians(75);
+
+
       // Render loop
       engine.runRenderLoop(() => { scene.render(); });
       window.addEventListener('resize', () => engine.resize());

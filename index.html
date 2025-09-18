@@ -131,7 +131,7 @@
     window.matchMedia('(orientation: landscape)').addEventListener?.('change', refreshOrientationBadge);
 
     // ===== Giroscópio: auto no mobile
-    let yawOffset = 0, pitchOffset = 0, rollOffset = 0; // offsets de calibração (em radianos)
+    let yawOffset = -Math.PI / 2, pitchOffset = 0, rollOffset = 0; // offsets de calibração (em radianos) — inicia com yaw = -90° (direita)
 
     async function requestMotionPermission(){
       try{

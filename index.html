@@ -4,15 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#000000" />
-  <title>FPS 3D — Menu + HUD + Giroscópio</title>
+  <title>FPS 3D — Menu + HUD (Mobile Gyro Auto)</title>
   <style>
     :root{ --navy:#0b2a6b; --navy2:#001021; --fg:#e6ebf5; }
     html,body{ height:100%; margin:0; background:#000; color:var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
-    /* use dynamic viewport height for mobile address bar changes */
     body{ height:100dvh; }
     canvas{ width:100vw; height:100dvh; display:block; touch-action:none; }
 
-    /* ===== Overlay de Menu (translúcido sobre a cena) ===== */
+    /* ===== Overlay de Menu ===== */
     #menu{ position:fixed; inset:0; display:grid; place-items:center; z-index:3;
       background:
         linear-gradient(180deg, rgba(0,16,33,.66), rgba(0,0,0,.68)),
@@ -49,7 +48,6 @@
       background: rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.08); }
     .hud .controls button{ pointer-events:auto; }
 
-    /* Orientação: ajuste layout */
     @media (orientation: landscape){
       .hud{ padding-left: calc(env(safe-area-inset-left,0px) + 18px); padding-right: calc(env(safe-area-inset-right,0px) + 18px); }
     }
@@ -59,23 +57,22 @@
 <body>
   <canvas id="game"></canvas>
 
-  <!-- MENU sobre a cena -->
+  <!-- MENU -->
   <div id="menu" aria-modal="true" role="dialog">
     <div class="panel" aria-label="Menu inicial">
       <h1>FPS 3D • Protótipo</h1>
-      <p>Toque/click para começar. Visual minimalista preto + azul‑marinho.</p>
+      <p>Pronto para mobile e desktop. Em celulares, o <b>giroscópio</b> liga automaticamente.</p>
       <button id="play" class="btn" aria-label="Jogar">Jogar</button>
-      <div class="footer" style="margin-top:12px; font-size:12px; opacity:.55;">No mobile você pode ativar o <b>giroscópio</b> pela HUD.</div>
+      <div class="footer" style="margin-top:12px; font-size:12px; opacity:.55;">Dica: use o botão Calibrar na HUD para alinhar o olhar.</div>
     </div>
   </div>
 
-  <!-- HUD responsiva -->
+  <!-- HUD -->
   <div class="hud" id="hud" aria-hidden="true">
     <div class="row top">
       <div class="left"><span class="badge">FPS 3D</span></div>
       <div class="right controls">
-        <button id="gyroBtn" class="btn small">Ativar giroscópio</button>
-        <button id="calBtn" class="btn small ghost" hidden>Calibrar</button>
+        <button id="calBtn" class="btn small ghost">Calibrar</button>
       </div>
     </div>
     <div class="row bottom">
@@ -90,34 +87,30 @@
     const menu   = document.getElementById('menu');
     const play   = document.getElementById('play');
     const hud    = document.getElementById('hud');
-    const gyroBtn= document.getElementById('gyroBtn');
     const calBtn = document.getElementById('calBtn');
     const orientBadge = document.getElementById('orientBadge');
 
-    const engine = new BABYLON.Engine(canvas, true);
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && screen.width < 1025);
 
-    // ===== Cena =====
+    const engine = new BABYLON.Engine(canvas, true);
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
-    // Câmera 1ª pessoa
-    const camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 1.2, 38), scene);
+    // ===== Cena base =====
+    let camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 1.2, 38), scene);
     camera.attachControl(canvas, true);
     camera.speed = 0; // sem WASD
     camera.keysUp = camera.keysDown = camera.keysLeft = camera.keysRight = [];
 
-    // Luz
     const light = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0,1,0), scene);
     light.intensity = 0.9;
 
-    // Sala gigante (caixa invertida)
     const room = BABYLON.MeshBuilder.CreateBox('room', { size: 80, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
     const roomMat = new BABYLON.StandardMaterial('roomMat', scene);
     roomMat.diffuseColor = new BABYLON.Color3(0.06, 0.07, 0.10);
     roomMat.specularColor = new BABYLON.Color3(0, 0, 0);
     room.material = roomMat;
 
-    // Cubo de referência
     const cube = BABYLON.MeshBuilder.CreateBox('cube', { size: 1 }, scene);
     cube.position = new BABYLON.Vector3(0, 0.5, -30);
     const crateMat = new BABYLON.StandardMaterial('crateMat', scene);
@@ -125,21 +118,11 @@
     crateMat.specularColor = new BABYLON.Color3(0.1,0.1,0.1);
     cube.material = crateMat;
 
-    camera.setTarget(cube.position);
-
-    // Render loop + resize
+    // ===== Render loop
     engine.runRenderLoop(() => scene.render());
     window.addEventListener('resize', () => engine.resize());
 
-    // ===== Menu → iniciar =====
-    play.addEventListener('click', () => {
-      menu.classList.add('hide');
-      canvas.requestPointerLock?.(); // desktop look
-      setTimeout(() => engine.resize(), 0);
-      hud.setAttribute('aria-hidden','false');
-    }, { passive:true });
-
-    // ===== HUD responsiva: badge de orientação =====
+    // ===== HUD: orientação
     function refreshOrientationBadge(){
       const isLandscape = window.matchMedia('(orientation: landscape)').matches;
       orientBadge.textContent = isLandscape ? 'Landscape' : 'Portrait';
@@ -147,57 +130,75 @@
     refreshOrientationBadge();
     window.matchMedia('(orientation: landscape)').addEventListener?.('change', refreshOrientationBadge);
 
-    // ===== Giroscópio (DeviceOrientation) =====
-    let gyroInput = null;   // BABYLON.FreeCameraDeviceOrientationInput
-    let rig = null;         // TransformNode para offsets/calibração
+    // ===== Giroscópio: auto no mobile
+    let yawOffset = 0, pitchOffset = 0, rollOffset = 0; // offsets de calibração (em radianos)
 
     async function requestMotionPermission(){
       try{
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
           const r = await DeviceMotionEvent.requestPermission();
-          if (r === 'granted') return true;
+          if (r !== 'granted') return false;
         }
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
           const r2 = await DeviceOrientationEvent.requestPermission();
-          if (r2 === 'granted') return true;
+          if (r2 !== 'granted') return false;
         }
-      }catch(_){/* ignore */}
-      // Android/desktop normalmente não precisa dessa permissão
+      }catch(_){ /* ignore */ }
       return true;
     }
 
-    async function enableGyro(){
+    function swapToDeviceOrientationCamera(){
+      const pos = camera.position.clone();
+      const fov = camera.fov; const minZ = camera.minZ; const maxZ = camera.maxZ;
+      const newCam = new BABYLON.DeviceOrientationCamera('devcam', pos, scene);
+      newCam.fov = fov; newCam.minZ = minZ; newCam.maxZ = maxZ;
+      newCam.attachControl(canvas, true);
+      // Habilitar também toque enquanto usa orientação do dispositivo
+      newCam._disablePointerInputWhenUsingDeviceOrientation = false;
+      scene.activeCamera = newCam;
+      camera.detachControl(canvas);
+      camera.dispose();
+      camera = newCam;
+
+      // Aplicar offsets de calibração sem mover posição — após os inputs do dispositivo
+      camera.onAfterCheckInputsObservable.add(() => {
+        const q = camera.rotationQuaternion; if (!q) return;
+        const adjust = BABYLON.Quaternion.FromEulerAngles(pitchOffset, yawOffset, rollOffset);
+        const finalQ = adjust.multiply(q);
+        camera.rotationQuaternion.copyFrom(finalQ);
+      });
+    }
+
+    async function enableGyroAuto(){
       const ok = await requestMotionPermission();
-      if (!ok) return false;
-      if (!gyroInput){
-        gyroInput = new BABYLON.FreeCameraDeviceOrientationInput();
-        camera.inputs.add(gyroInput);
-      }
-      // Permitir também toque/arrasto enquanto usa orientação do dispositivo
-      camera._disablePointerInputWhenUsingDeviceOrientation = false;
-
-      // Rig para calibração: aplica offset sem interferir na atualização do input
-      if (!rig){ rig = new BABYLON.TransformNode('rig', scene); camera.parent = rig; }
-      return true;
+      if (!ok) return;
+      swapToDeviceOrientationCamera();
     }
 
-    function calibrateGyro(){
-      // Define o offset do rig para "zerar" a orientação atual
-      if (!rig || !camera.rotationQuaternion) return;
-      if (!rig.rotationQuaternion) rig.rotationQuaternion = BABYLON.Quaternion.Identity();
-      rig.rotationQuaternion = camera.rotationQuaternion.clone().conjugate();
+    function calibrate(){
+      // Zera yaw/pitch atuais sem alterar a posição — evita "teleporte".
+      if (!camera.rotationQuaternion) return;
+      const e = camera.rotationQuaternion.toEulerAngles();
+      // Tornar a orientação atual o novo "zero":
+      yawOffset   = -e.y;  // compensa heading
+      pitchOffset = -e.x;  // compensa inclinação
+      rollOffset  = 0;     // evita rolagem lateral
     }
 
-    gyroBtn.addEventListener('click', async ()=>{
-      const ok = await enableGyro();
-      if (ok){
-        gyroBtn.textContent = 'Giroscópio: ON';
-        gyroBtn.classList.add('ghost');
-        calBtn.hidden = false;
-        calibrateGyro();
+    // ===== Menu → iniciar =====
+    play.addEventListener('click', async () => {
+      menu.classList.add('hide');
+      hud.setAttribute('aria-hidden','false');
+      if (isMobile) {
+        await enableGyroAuto();
+      } else {
+        canvas.requestPointerLock?.();
       }
-    });
-    calBtn.addEventListener('click', calibrateGyro);
+      setTimeout(() => engine.resize(), 0);
+    }, { passive:true });
+
+    // ===== HUD: Calibrar =====
+    calBtn.addEventListener('click', calibrate);
   })();
   </script>
 </body>

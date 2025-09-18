@@ -122,43 +122,28 @@
         camera = new BABYLON.DeviceOrientationCamera('cam', new BABYLON.Vector3(0, 1.6, 0), scene);
         // Allow touch to also rotate when using gyro
         camera._disablePointerInputWhenUsingDeviceOrientation = false;
-        camera.attachControl(canvas, true);
-      } else {
-        camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 1.6, 0), scene);
-        camera.attachControl(canvas, true);
-      }
-
-      // FPS-like look only (sem movimento WASD)
+        $1
+      // Garantir câmera ativa e olhar para o cubo de referência
+      scene.activeCamera = camera;
+      try { camera.setTarget(new BABYLON.Vector3(0, 1, -3.5)); } catch(_) {}
+// FPS-like look only (sem movimento WASD)
       camera.speed = 0; // evita deslocamento
       camera.keysUp = camera.keysDown = camera.keysLeft = camera.keysRight = [];
 
-      // === Luz e geometria básica ===
-      // Luz ambiente suave para a sala escura
-      const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
-      hemi.intensity = 1.0;
+      $1
+      // Fallback visível SEM depender de luz: esfera emissiva próxima da câmera
+      const debugBall = BABYLON.MeshBuilder.CreateSphere('debugBall', { diameter: 0.6 }, scene);
+      debugBall.position = new BABYLON.Vector3(0, 1.6, -2);
+      const dbgMat = new BABYLON.StandardMaterial('dbgMat', scene);
+      dbgMat.emissiveColor = new BABYLON.Color3(0.4, 0.4, 0.8);
+      debugBall.material = dbgMat;
 
-      // Uma luz pontual fraca acima da câmera para dar contraste
-      const point = new BABYLON.PointLight('point', new BABYLON.Vector3(0, 2.5, 1.5), scene);
-      point.intensity = 1.2;
-
-      // Sala: caixa invertida para olharmos de dentro (10m)
-      const room = BABYLON.MeshBuilder.CreateBox('room', { size: 10, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
-      const roomMat = new BABYLON.StandardMaterial('roomMat', scene);
-      roomMat.diffuseColor = new BABYLON.Color3(0.12, 0.14, 0.18); // quase preta
-      roomMat.specularColor = new BABYLON.Color3(0, 0, 0);
-      room.material = roomMat;
-
-      // Cubo de referência "de pedra" no lado oposto da sala
-      const ref = BABYLON.MeshBuilder.CreateBox('ref', { size: 1 }, scene);
-      ref.position = new BABYLON.Vector3(0, 1, -3.5);
-      const refMat = new BABYLON.StandardMaterial('refMat', scene);
-      refMat.diffuseColor = new BABYLON.Color3(0.25, 0.25, 0.28);
-      refMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
-      refMat.emissiveColor = new BABYLON.Color3(0.08, 0.08, 0.10); // levemente visível na escuridão
-      try {
-        refMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/rock.png', scene);
-      } catch (e) { /* se falhar, fica só a cor difusa */ }
-      ref.material = refMat;
+      // Chão simples para referência
+      const floor = BABYLON.MeshBuilder.CreateGround('floor', { width: 8, height: 8 }, scene);
+      const floorMat = new BABYLON.StandardMaterial('floorMat', scene);
+      floorMat.diffuseColor = new BABYLON.Color3(0.15, 0.16, 0.2);
+      floorMat.specularColor = new BABYLON.Color3(0, 0, 0);
+      floor.material = floorMat;
 
       // Parâmetros de câmera
       camera.minZ = 0.05;
@@ -167,7 +152,10 @@
 
 
       // Render loop
-      engine.runRenderLoop(() => { scene.render(); });
+      $1
+      // Forçar um resize após iniciar (caso o canvas tenha acabado de aparecer)
+      setTimeout(() => engine.resize(), 0);
+
       window.addEventListener('resize', () => engine.resize());
 
       // Prevent gestures scrolling on mobile

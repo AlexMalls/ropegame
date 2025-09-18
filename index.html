@@ -22,8 +22,13 @@
       scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
       // Câmera simples apontando para o centro
-      const camera = new BABYLON.ArcRotateCamera('cam', Math.PI/3, Math.PI/2.05, 10, new BABYLON.Vector3(0,0.3,0), scene);
+      const camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 1.0, 0), scene);
       camera.attachControl(canvas, true);
+      // FPS: gira em torno de si mesmo (sem orbitar)
+      camera.speed = 0;
+      camera.keysUp = camera.keysDown = camera.keysLeft = camera.keysRight = [];
+      // Clique para pointer lock (opcional)
+      canvas.addEventListener('click', () => { canvas.requestPointerLock?.(); });
 
       // Luz básica
       const light = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0,1,0), scene);
@@ -43,6 +48,9 @@
       crateMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/crate.png', scene);
       crateMat.specularColor = new BABYLON.Color3(0.1,0.1,0.1);
       cube.material = crateMat;
+
+      // Olhar inicialmente para o cubo (a partir da posição atual)
+      camera.setTarget(cube.position);
 
       return scene;
     }

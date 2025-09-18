@@ -176,13 +176,19 @@
   function currentCalibratedQuat(){ return qMul(qConj(qCal),computeCurrentQuat()); }
   btnCal.addEventListener('click',()=>{ qCal=computeCurrentQuat(); status.textContent='Recalibrado: posição atual = Frente.'; });
 
-  function faceFrom(yaw,pitch){
-    // Troca: usar pitch para Esquerda/Direita e yaw para Cima/Baixo
-    if(yaw>30) return 'Cima';
-    if(yaw<-30) return 'Baixo';
-    if(pitch>30) return 'Direita';
-    if(pitch<-30) return 'Esquerda';
+  function faceFrom(yaw, pitch) {
+    // Pitch controla Cima/Baixo
+    if (pitch > 140) return 'Cima';
+    if (pitch < 20) return 'Baixo';
+  
+    // Yaw controla Esquerda/Direita
+    if (yaw > 45) return 'Esquerda';
+    if (yaw < -45) return 'Direita';
+  
+    // Posição neutra
     return 'Frente';
+  }
+
   }
 
   function tick(ts){
@@ -211,3 +217,4 @@
 </script>
 </body>
 </html>
+

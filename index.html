@@ -3,168 +3,53 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <meta name="theme-color" content="#000000" />
-  <title>FPS 3D — Protótipo</title>
+  <title>Sala + Cubo (mínimo)</title>
   <style>
-    :root{ --navy:#0b2a6b; --navy2:#001021; }
-    *{ box-sizing:border-box; }
-    html,body{ height:100%; margin:0; background:#000; color:#e6ebf5; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
-    body{ overflow:hidden; -webkit-tap-highlight-color: transparent; }
-    #menu{
-      position:fixed; inset:0; display:flex; align-items:center; justify-content:center; gap:2rem;
-      background: radial-gradient(1000px 700px at 50% 20%, rgba(11,42,107,.25), transparent 60%),
-                  linear-gradient(180deg, #000 0%, #000 100%);
-      user-select:none; transition:opacity .35s ease, visibility .35s ease; z-index:3;
-    }
-    #logo{ text-align:center; line-height:1.2; }
-    #logo h1{ font-size: clamp(28px, 4vw, 46px); margin:0; letter-spacing:.5px; }
-    #logo p{ margin:.5rem 0 1.5rem; opacity:.8; font-size: clamp(14px, 1.8vw, 16px); }
-    .btn{
-      appearance:none; border:none; cursor:pointer; padding:14px 28px; font-weight:700; font-size:16px; border-radius:14px;
-      background: linear-gradient(135deg, var(--navy2) 0%, var(--navy) 100%);
-      color:#e6ebf5; box-shadow: 0 10px 30px rgba(11,42,107,.35), inset 0 1px 0 rgba(255,255,255,.06);
-      transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
-    }
-    .btn:hover{ transform: translateY(-1px); box-shadow: 0 12px 36px rgba(11,42,107,.5), inset 0 1px 0 rgba(255,255,255,.08); }
-    .btn:active{ transform: translateY(0); filter: brightness(.95); }
-    .footer{ position:fixed; bottom:16px; left:0; right:0; display:flex; justify-content:center; font-size:12px; opacity:.5; }
-
-    #gameWrap{ position:fixed; inset:0; display:none; }
-    canvas{ width:100%; height:100%; display:block; touch-action:none; }
-    .show{ display:block; animation: fade .4s ease both; }
-    @keyframes fade{ from{ opacity:0 } to{ opacity:1 } }
+    html,body{height:100%;margin:0;background:#000}
+    canvas{width:100%;height:100%;display:block}
   </style>
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
 </head>
 <body>
-  <!-- MENU -->
-  <div id="menu">
-    <div id="logo">
-      <h1>FPS 3D • Protótipo</h1>
-      <p>HTML + WebGL. Toque ou clique para entrar. Cores: preto & azul‑marinho.</p>
-      <button id="play" class="btn" aria-label="Jogar">Jogar</button>
-      <div class="footer">Dica: no iOS pode aparecer um pedido de permissão do giroscópio.</div>
-    </div>
-  </div>
-
-  <!-- GAME CANVAS -->
-  <div id="gameWrap"><canvas id="game"></canvas></div>
-
+  <canvas id="game"></canvas>
   <script>
   (function(){
-    const menu = document.getElementById('menu');
-    const playBtn = document.getElementById('play');
-    const wrap = document.getElementById('gameWrap');
     const canvas = document.getElementById('game');
+    const engine = new BABYLON.Engine(canvas, true);
 
-    let engine = null, scene = null, camera = null;
-    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-    playBtn.addEventListener('click', async () => {
-      menu.style.opacity = '0';
-      menu.style.visibility = 'hidden';
-      wrap.classList.add('show');
-
-      const gyroGranted = await requestMotionPermission();
-      startEngine({ useGyro: gyroGranted && isMobileUA });
-
-      if (!isMobileUA) requestPointerLock(canvas);
-    }, { passive: true });
-
-    function requestPointerLock(el){
-      const lock = () => { if (el.requestPointerLock) el.requestPointerLock(); };
-      lock();
-      el.addEventListener('click', lock);
-      el.addEventListener('touchstart', lock, {passive:true});
-      document.addEventListener('keydown', (e)=>{ if(e.code==='Escape' && document.exitPointerLock){ document.exitPointerLock(); } });
-    }
-
-    async function requestMotionPermission(){
-      try{
-        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
-          const r = await DeviceMotionEvent.requestPermission();
-          if (r === 'granted') return true;
-        }
-        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
-          const r2 = await DeviceOrientationEvent.requestPermission();
-          if (r2 === 'granted') return true;
-        }
-      }catch(err){ /* ignore */ }
-      return false;
-    }
-
-    function startEngine({useGyro=false}={}){
-      engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer:false, stencil:true, disableWebGL2Support:false });
-      scene = new BABYLON.Scene(engine);
+    function createScene(){
+      const scene = new BABYLON.Scene(engine);
       scene.clearColor = new BABYLON.Color4(0,0,0,1);
-      scene.ambientColor = new BABYLON.Color3(0.2, 0.2, 0.25);
 
-      // CAMERA
-      if (useGyro){
-        camera = new BABYLON.DeviceOrientationCamera('cam', new BABYLON.Vector3(0, 1.6, 0), scene);
-        camera._disablePointerInputWhenUsingDeviceOrientation = false;
-        camera.attachControl(canvas, true);
-      } else {
-        camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 1.6, 0), scene);
-        camera.attachControl(canvas, true);
-      }
-      camera.speed = 0;
-      camera.keysUp = camera.keysDown = camera.keysLeft = camera.keysRight = [];
-      scene.activeCamera = camera;
-      camera.setTarget(new BABYLON.Vector3(0, 1, -3.5));
-      camera.minZ = 0.05;
-      camera.maxZ = 100;
-      camera.fov = BABYLON.Tools.ToRadians(75);
+      // Câmera simples apontando para o centro
+      const camera = new BABYLON.ArcRotateCamera('cam', Math.PI/3, Math.PI/3, 8, new BABYLON.Vector3(0,1,0), scene);
+      camera.attachControl(canvas, true);
 
-      // LUZES
-      const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
-      hemi.intensity = 1.0;
-      const point = new BABYLON.PointLight('point', new BABYLON.Vector3(0, 2.5, 1.5), scene);
-      point.intensity = 1.2;
+      // Luz básica
+      const light = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0,1,0), scene);
+      light.intensity = 1.0;
 
-      // SALA (caixa invertida)
-      const room = BABYLON.MeshBuilder.CreateBox('room', { size: 10, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
+      // Sala: caixa invertida (olhamos de dentro)
+      const room = BABYLON.MeshBuilder.CreateBox('room', { size: 12, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
       const roomMat = new BABYLON.StandardMaterial('roomMat', scene);
       roomMat.diffuseColor = new BABYLON.Color3(0.12, 0.14, 0.18);
       roomMat.specularColor = new BABYLON.Color3(0, 0, 0);
       room.material = roomMat;
 
-      // CHÃO
-      const floor = BABYLON.MeshBuilder.CreateGround('floor', { width: 8, height: 8 }, scene);
-      const floorMat = new BABYLON.StandardMaterial('floorMat', scene);
-      floorMat.diffuseColor = new BABYLON.Color3(0.15, 0.16, 0.2);
-      floorMat.specularColor = new BABYLON.Color3(0, 0, 0);
-      floor.material = floorMat;
+      // Cubo com textura crate.png do Playground
+      const cube = BABYLON.MeshBuilder.CreateBox('cube', { size: 2 }, scene);
+      cube.position = new BABYLON.Vector3(0, 1, 0);
+      const crateMat = new BABYLON.StandardMaterial('crateMat', scene);
+      crateMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/crate.png', scene);
+      crateMat.specularColor = new BABYLON.Color3(0.1,0.1,0.1);
+      cube.material = crateMat;
 
-      // CUBO DE REFERÊNCIA (textura rock do Playground)
-      const ref = BABYLON.MeshBuilder.CreateBox('ref', { size: 1 }, scene);
-      ref.position = new BABYLON.Vector3(0, 1, -3.5);
-      const refMat = new BABYLON.StandardMaterial('refMat', scene);
-      refMat.diffuseColor = new BABYLON.Color3(0.25, 0.25, 0.28);
-      refMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
-      refMat.emissiveColor = new BABYLON.Color3(0.08, 0.08, 0.10);
-      refMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/rock.png', scene);
-      ref.material = refMat;
-
-      // REFERÊNCIA QUE NÃO DEPENDE DE LUZ (sempre visível)
-      const debugBall = BABYLON.MeshBuilder.CreateSphere('debugBall', { diameter: 0.6 }, scene);
-      debugBall.position = new BABYLON.Vector3(0, 1.6, -2);
-      const dbgMat = new BABYLON.StandardMaterial('dbgMat', scene);
-      dbgMat.emissiveColor = new BABYLON.Color3(0.4, 0.4, 0.8);
-      debugBall.material = dbgMat;
-
-      // RENDER
-      engine.runRenderLoop(function(){ scene.render(); });
-      // Garante dimensionamento correto assim que o canvas aparece
-      setTimeout(function(){ engine.resize(); }, 0);
-      window.addEventListener('resize', function(){ engine.resize(); });
-
-      // Evita gesto de scroll em cima do canvas no mobile
-      ['touchstart','touchmove','gesturestart'].forEach(function(evt){
-        document.addEventListener(evt, function(e){ if (e.target === canvas) e.preventDefault(); }, { passive:false });
-      });
-      window.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+      return scene;
     }
+
+    const scene = createScene();
+    engine.runRenderLoop(() => scene.render());
+    window.addEventListener('resize', () => engine.resize());
   })();
   </script>
 </body>

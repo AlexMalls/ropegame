@@ -3,12 +3,22 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <title>Sala 3D – Giroscópio</title>
+  <title>Sala 3D – Giroscópio (Local Controls)</title>
+
+  <!-- Import Map: mapeia 'three' para a mesma versão que estamos usando -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+
   <style>
     html, body { height:100%; margin:0; background:#000; overflow:hidden; }
     #hud {
       position: fixed; inset: 0 0 auto 0; display:flex; gap:.5rem; padding:.5rem;
-      align-items:center; justify-content:center; pointer-events:none;
+      justify-content:center; pointer-events:none;
     }
     #btnPermissao, #btnDebug {
       pointer-events:auto; font:600 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto;
@@ -16,7 +26,7 @@
     }
     #btnDebug { background:#eee; }
     #debug {
-      position: fixed; bottom:.5rem; left:.5rem; color:#fff; font:12px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      position: fixed; bottom:.5rem; left:.5rem; color:#fff; font:12px/1.3 ui-monospace, Menlo, Consolas, monospace;
       background:rgba(0,0,0,.45); padding:.5rem .6rem; border-radius:.5rem; display:none; white-space:pre;
     }
   </style>
@@ -30,17 +40,18 @@
   <canvas id="c"></canvas>
 
   <script type="module">
-    import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-    import { DeviceOrientationControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/DeviceOrientationControls.js";
+    // Importa o three via import map e o controle local hospedado por você
+    import * as THREE from "three";
+    import { DeviceOrientationControls } from "/jsm/controls/DeviceOrientationControls.js";
 
-    // --- Básico da cena ---
+    // --- Render básico ---
     const canvas = document.getElementById('c');
     const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     const scene = new THREE.Scene();
 
     const camera = new THREE.PerspectiveCamera(75, 2, 0.01, 100);
-    camera.position.set(0, 0, 0); // dentro da sala
+    camera.position.set(0, 0, 0);
     scene.add(camera);
 
     // --- Sala cúbica com texto em cada face ---
@@ -49,51 +60,38 @@
       const cnv = document.createElement('canvas');
       cnv.width = cnv.height = size;
       const ctx = cnv.getContext('2d');
-      // fundo
-      ctx.fillStyle = bg;
-      ctx.fillRect(0,0,size,size);
-      // grade sutil pra sensação de parede
+      ctx.fillStyle = bg; ctx.fillRect(0,0,size,size);
       ctx.strokeStyle = 'rgba(255,255,255,0.06)';
       for (let i=0;i<=16;i++){
         const p = Math.round((i/16)*size);
         ctx.beginPath(); ctx.moveTo(p,0); ctx.lineTo(p,size); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(0,p); ctx.lineTo(size,p); ctx.stroke();
       }
-      // texto grande central
       ctx.fillStyle = fg;
       ctx.font = "bold 160px system-ui, -apple-system, Segoe UI, Roboto";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.shadowColor = "rgba(0,0,0,.35)";
-      ctx.shadowBlur = 16;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(0,0,0,.35)"; ctx.shadowBlur = 16;
       ctx.fillText(label, size/2, size/2);
       return new THREE.CanvasTexture(cnv);
     }
 
-    const labels = [
-      { text: "DIREITA",  bg:"#2a4b8d" }, // +X
-      { text: "ESQUERDA", bg:"#8d2a2a" }, // -X
-      { text: "CIMA",     bg:"#2a8d4b" }, // +Y
-      { text: "BAIXO",    bg:"#8d7b2a" }, // -Y
-      { text: "FRENTE",   bg:"#5b2a8d" }, // +Z
-      { text: "TRÁS",     bg:"#2a8a8d" }, // -Z
+    const materials = [
+      new THREE.MeshBasicMaterial({ map: faceTexture("DIREITA",  "#2a4b8d"), side: THREE.BackSide }), // +X
+      new THREE.MeshBasicMaterial({ map: faceTexture("ESQUERDA", "#8d2a2a"), side: THREE.BackSide }), // -X
+      new THREE.MeshBasicMaterial({ map: faceTexture("CIMA",     "#2a8d4b"), side: THREE.BackSide }), // +Y
+      new THREE.MeshBasicMaterial({ map: faceTexture("BAIXO",    "#8d7b2a"), side: THREE.BackSide }), // -Y
+      new THREE.MeshBasicMaterial({ map: faceTexture("FRENTE",   "#5b2a8d"), side: THREE.BackSide }), // +Z
+      new THREE.MeshBasicMaterial({ map: faceTexture("TRÁS",     "#2a8a8d"), side: THREE.BackSide })  // -Z
     ];
-
-    const materials = labels.map(({text,bg}) => new THREE.MeshBasicMaterial({
-      map: faceTexture(text, bg, "#ffffff"), side: THREE.BackSide
-    }));
 
     const room = new THREE.Mesh(new THREE.BoxGeometry(10,10,10), materials);
     scene.add(room);
 
-    // --- Luz ambiente sutil (não afeta MeshBasic, mas caso troque o material) ---
-    scene.add(new THREE.AmbientLight(0xffffff, 0.2));
-
-    // --- Controles por giroscópio (rotaciona a CÂMERA) ---
+    // --- Controles de giroscópio (rotacionam a CÂMERA) ---
     const controls = new DeviceOrientationControls(camera);
-    controls.enabled = false; // só liga após permissão
+    controls.enabled = false;
 
-    // iOS precisa de permissão via gesto do usuário
+    // iOS exige permissão via gesto do usuário
     const btn = document.getElementById('btnPermissao');
     btn.addEventListener('click', async () => {
       try {
@@ -109,7 +107,7 @@
       }
     });
 
-    // --- Debug opcional (mostra yaw/pitch/roll da câmera) ---
+    // --- Debug opcional ---
     const debugDiv = document.getElementById('debug');
     const btnDebug = document.getElementById('btnDebug');
     btnDebug.addEventListener('click', () => {
@@ -119,21 +117,18 @@
     });
 
     function eulerFromCamera(cam){
-      // Converte a orientação da câmera para Yaw (Y), Pitch (X), Roll (Z) em graus
       const e = new THREE.Euler().setFromQuaternion(cam.quaternion, 'YXZ');
       const toDeg = r => THREE.MathUtils.radToDeg(r);
-      let yaw = toDeg(e.y), pitch = toDeg(e.x), roll = toDeg(e.z);
-      // normaliza para [-180,180]
       const norm = v => ((v+180)%360+360)%360-180;
-      return { yaw: norm(yaw), pitch: norm(pitch), roll: norm(roll) };
+      return { yaw: norm(toDeg(e.y)), pitch: norm(toDeg(e.x)), roll: norm(toDeg(e.z)) };
     }
 
     // --- Resize ---
     function resizeRendererToDisplaySize() {
-      const { clientWidth, clientHeight } = renderer.domElement;
       const width = window.innerWidth;
       const height = window.innerHeight;
-      if (clientWidth !== width || clientHeight !== height) {
+      const needResize = renderer.domElement.width !== width || renderer.domElement.height !== height;
+      if (needResize) {
         renderer.setSize(width, height, false);
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
@@ -145,30 +140,26 @@
     // --- Loop ---
     renderer.setAnimationLoop(() => {
       resizeRendererToDisplaySize();
-      // Atualiza orientação da câmera a partir do giroscópio
       if (controls.enabled) controls.update();
 
-      // Atualiza debug
       if (debugDiv.style.display === 'block') {
         const { yaw, pitch, roll } = eulerFromCamera(camera);
         debugDiv.textContent =
-`Yaw (Y/esquerda-direita): ${yaw.toFixed(1)}°
-Pitch (X/cima-baixo):     ${pitch.toFixed(1)}°
-Roll (Z/rolagem):         ${roll.toFixed(1)}°`;
+`Yaw (Y esq/dir): ${yaw.toFixed(1)}°
+Pitch (X cima/baixo): ${pitch.toFixed(1)}°
+Roll (Z rolagem): ${roll.toFixed(1)}°`;
       }
-
       renderer.render(scene, camera);
     });
 
-    // --- Suporte simples a mouse (desktop) para testar: arraste para girar ---
-    // Não interfere no giroscópio; útil se abrir no PC.
+    // Suporte mouse p/ teste em desktop (não interfere no giroscópio)
     (function enableMouseLook(){
-      let dragging = false, sx=0, sy=0, yaw=0, pitch=0;
+      let dragging=false, sx=0, sy=0, yaw=0, pitch=0;
       const tmp = new THREE.Euler(0,0,0,'YXZ');
-      window.addEventListener('pointerdown', e => { dragging=true; sx=e.clientX; sy=e.clientY; });
+      window.addEventListener('pointerdown', e => { if(controls.enabled) return; dragging=true; sx=e.clientX; sy=e.clientY; });
       window.addEventListener('pointerup',   () => dragging=false);
       window.addEventListener('pointermove', e => {
-        if (!dragging || controls.enabled) return; // se giroscopio ativo, ignora mouse
+        if (!dragging || controls.enabled) return;
         const dx = (e.clientX - sx) * 0.003;
         const dy = (e.clientY - sy) * 0.003;
         sx = e.clientX; sy = e.clientY;
@@ -182,4 +173,3 @@ Roll (Z/rolagem):         ${roll.toFixed(1)}°`;
   </script>
 </body>
 </html>
-

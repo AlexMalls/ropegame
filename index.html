@@ -102,7 +102,7 @@
     </aside>
   </main>
 
-  <footer>© Tester Gyro v1.4</footer>
+  <footer>© Tester Gyro v1.5</footer>
 </div>
 
 <div class="modal" id="debug-modal">
@@ -143,7 +143,6 @@
     return { yaw:rad2deg(yaw), pitch:rad2deg(pitch), roll:rad2deg(roll) };
   }
   function normalizeDeg(a){ let d=a%360; if(d>180) d-=360; if(d<-180) d+=360; return d; }
-  function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
 
   const status=document.getElementById('status-text');
   const world=document.getElementById('world');
@@ -163,7 +162,7 @@
   let raw={ alpha:0,beta:0,gamma:0, absolute:false };
   let screenAngle=getScreenAngle();
   let qCal=[1,0,0,0];
-  const logs={ meta:{ version:'1.4', startedAt:null, endedAt:null, sampleHz }, device:[], interpreted:[] };
+  const logs={ meta:{ version:'1.5', startedAt:null, endedAt:null, sampleHz }, device:[], interpreted:[] };
 
   function getScreenAngle(){ if(screen.orientation&&typeof screen.orientation.angle==='number') return screen.orientation.angle; return typeof window.orientation==='number'?window.orientation:0; }
   window.addEventListener('orientationchange',()=>{screenAngle=getScreenAngle();});
@@ -178,11 +177,11 @@
   btnCal.addEventListener('click',()=>{ qCal=computeCurrentQuat(); status.textContent='Recalibrado: posição atual = Frente.'; });
 
   function faceFrom(yaw,pitch){
-    // Separar lógica: yaw → esquerda/direita, pitch → cima/baixo
-    if(pitch>45) return 'Cima';
-    if(pitch<-45) return 'Baixo';
-    if(yaw>30) return 'Direita';
-    if(yaw<-30) return 'Esquerda';
+    // Troca: usar pitch para Esquerda/Direita e yaw para Cima/Baixo
+    if(yaw>30) return 'Cima';
+    if(yaw<-30) return 'Baixo';
+    if(pitch>30) return 'Direita';
+    if(pitch<-30) return 'Esquerda';
     return 'Frente';
   }
 

@@ -3,10 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <title>Sala 3D – Giroscópio (Local Controls)</title>
+  <title>Sala 3D – Giroscópio</title>
 
-  import { DeviceOrientationControls } from "/jsm/controls/DeviceOrientationControls.js";
-
+  <!-- Import map para o navegador entender o "three" -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
 
   <style>
     html, body { height:100%; margin:0; background:#000; overflow:hidden; }
@@ -34,7 +40,6 @@
   <canvas id="c"></canvas>
 
   <script type="module">
-    // Importa o three via import map e o controle local hospedado por você
     import * as THREE from "three";
     import { DeviceOrientationControls } from "/jsm/controls/DeviceOrientationControls.js";
 
@@ -146,7 +151,7 @@ Roll (Z rolagem): ${roll.toFixed(1)}°`;
       renderer.render(scene, camera);
     });
 
-    // Suporte mouse p/ teste em desktop (não interfere no giroscópio)
+    // Suporte mouse p/ teste em desktop
     (function enableMouseLook(){
       let dragging=false, sx=0, sy=0, yaw=0, pitch=0;
       const tmp = new THREE.Euler(0,0,0,'YXZ');
@@ -167,4 +172,3 @@ Roll (Z rolagem): ${roll.toFixed(1)}°`;
   </script>
 </body>
 </html>
-

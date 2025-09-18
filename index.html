@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Giroscópio Tester – 1ª Pessoa</title>
+  <title>Giroscópio Tester – 1ª Pessoa (Câmera)</title>
   <style>
     :root {
       --bg: #0b0f14;
@@ -14,10 +14,10 @@
       --danger: #f87171;
       --warn: #fbbf24;
       --radius: 12px;
-      --cube: min(90vmin, 680px);
+      --cube: 800px; /* maior, já que o usuário estará dentro */
     }
     * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+    html, body { height: 100%; margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
 
     .app { display: flex; flex-direction: column; height: 100%; }
 
@@ -32,38 +32,39 @@
 
     .statusbar { text-align:center; font-size: 12px; color: var(--muted); }
 
-    main { flex:1; display:flex; flex-direction: column; padding: 6px; gap:6px; }
+    main { flex:1; display:flex; flex-direction: column; padding: 0; gap:0; }
 
-    .viewport-wrap { flex:1; background:#0a0f18; border-radius: var(--radius); position: relative; overflow:hidden; }
-    .viewport { position: absolute; inset: 0; perspective: 900px; }
+    .viewport-wrap { flex:1; position: relative; overflow:hidden; }
+    .viewport { position: absolute; inset: 0; perspective: 1200px; }
     .world { position:absolute; inset:0; transform-style: preserve-3d; }
+
     .cube { position:absolute; top:50%; left:50%; transform-style: preserve-3d; width: var(--cube); height: var(--cube); transform: translate(-50%, -50%); }
-    .face { position:absolute; width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size: clamp(22px, 6vw, 32px); font-weight:800; color:#fff; background: rgba(21,30,45,.85); border:1px solid rgba(255,255,255,.1); }
-    .front  { transform: translateZ(calc(var(--cube) / 2)); }
+    .face { position:absolute; width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size: clamp(22px, 6vw, 32px); font-weight:800; color:#fff; background: rgba(21,30,45,.9); border:2px solid rgba(255,255,255,.1); }
+    .front  { transform: rotateY(0deg) translateZ(calc(var(--cube) / 2)); }
     .back   { transform: rotateY(180deg) translateZ(calc(var(--cube) / 2)); }
     .right  { transform: rotateY(90deg) translateZ(calc(var(--cube) / 2)); }
     .left   { transform: rotateY(-90deg) translateZ(calc(var(--cube) / 2)); }
     .top    { transform: rotateX(90deg) translateZ(calc(var(--cube) / 2)); }
     .bottom { transform: rotateX(-90deg) translateZ(calc(var(--cube) / 2)); }
 
-    .hud { background: var(--panel); border-radius: var(--radius); padding: 6px; font-size:12px; display: grid; grid-template-columns: repeat(2, 1fr); gap:4px; }
-    .hud h2 { grid-column: 1/-1; font-size: 13px; margin:0 0 4px; text-align:center; }
-    .kv { display:flex; justify-content:space-between; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; padding:2px 0; }
+    .hud { position:absolute; bottom:0; left:0; right:0; background: rgba(0,0,0,.6); border-radius: 0; padding: 4px; font-size:11px; display: grid; grid-template-columns: repeat(3, 1fr); gap:2px; z-index:20; }
+    .hud h2 { grid-column: 1/-1; font-size: 12px; margin:0 0 2px; text-align:center; }
+    .kv { display:flex; justify-content:space-between; font-family: monospace; font-size:10px; }
 
-    footer { padding: 6px; font-size: 11px; text-align:center; background: var(--panel); }
+    footer { display:none; }
 
     .modal { position: fixed; inset: 0; display:none; place-items:center; background: rgba(0,0,0,.7); z-index: 50; }
     .modal.open { display:grid; }
     .modal-card { width: 95vw; max-height: 85vh; background: var(--bg); border-radius: var(--radius); display:flex; flex-direction:column; overflow: hidden; }
     .modal-body { padding: 6px; flex:1; overflow:auto; }
-    textarea { width: 100%; min-height: 60vh; border:none; background:#000; color:#0f0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; padding: 6px; }
+    textarea { width: 100%; min-height: 60vh; border:none; background:#000; color:#0f0; font-family: monospace; font-size: 11px; padding: 6px; }
     .modal-actions { display:flex; justify-content:space-around; padding: 6px; background: var(--panel); }
   </style>
 </head>
 <body>
 <div class="app">
   <header>
-    <h1>Giroscópio Tester — 1ª Pessoa</h1>
+    <h1>Giroscópio Tester — Visão 1ª Pessoa</h1>
     <div class="controls">
       <button id="btn-permission" class="warn">Permitir</button>
       <button id="btn-calibrate" class="success">Recalibrar</button>
@@ -75,7 +76,7 @@
 
   <main>
     <section class="viewport-wrap">
-      <div class="viewport">
+      <div class="viewport" id="viewport">
         <div class="world" id="world">
           <div class="cube">
             <div class="face front">Frente</div>
@@ -91,9 +92,6 @@
 
     <aside class="hud">
       <h2>HUD</h2>
-      <div class="kv"><span>alpha</span><b id="alpha">—</b></div>
-      <div class="kv"><span>beta</span><b id="beta">—</b></div>
-      <div class="kv"><span>gamma</span><b id="gamma">—</b></div>
       <div class="kv"><span>yaw</span><b id="yaw">—</b></div>
       <div class="kv"><span>pitch</span><b id="pitch">—</b></div>
       <div class="kv"><span>roll</span><b id="roll">—</b></div>
@@ -101,8 +99,6 @@
       <div class="kv"><span>orientação</span><b id="orientation">—</b></div>
     </aside>
   </main>
-
-  <footer>© Tester Gyro v1.6</footer>
 </div>
 
 <div class="modal" id="debug-modal">
@@ -146,6 +142,7 @@
 
   const status=document.getElementById('status-text');
   const world=document.getElementById('world');
+  const viewport=document.getElementById('viewport');
   const debugModal=document.getElementById('debug-modal');
   const debugText=document.getElementById('debug-text');
   const orientationEl=document.getElementById('orientation');
@@ -156,13 +153,13 @@
   const btnCopy=document.getElementById('btn-copy');
   const btnClose=document.getElementById('btn-close-modal');
 
-  const h={ alpha:document.getElementById('alpha'), beta:document.getElementById('beta'), gamma:document.getElementById('gamma'), yaw:document.getElementById('yaw'), pitch:document.getElementById('pitch'), roll:document.getElementById('roll'), face:document.getElementById('face') };
+  const h={ yaw:document.getElementById('yaw'), pitch:document.getElementById('pitch'), roll:document.getElementById('roll'), face:document.getElementById('face') };
 
   let running=false, rafId=0, lastSample=0; const sampleHz=2, sampleInterval=1000/sampleHz;
   let raw={ alpha:0,beta:0,gamma:0, absolute:false };
   let screenAngle=getScreenAngle();
   let qCal=[1,0,0,0];
-  const logs={ meta:{ version:'1.6', startedAt:null, endedAt:null, sampleHz }, device:[], interpreted:[] };
+  const logs={ meta:{ version:'1.6-camera', startedAt:null, endedAt:null, sampleHz }, device:[], interpreted:[] };
 
   function getScreenAngle(){ if(screen.orientation&&typeof screen.orientation.angle==='number') return screen.orientation.angle; return typeof window.orientation==='number'?window.orientation:0; }
   window.addEventListener('orientationchange',()=>{screenAngle=getScreenAngle();});
@@ -181,18 +178,13 @@
     const qRel=currentCalibratedQuat();
     let { yaw, pitch, roll }=quatToYPR(qRel);
 
-    // ===== Ajustes manuais conforme suas anotações =====
-    // Pitch controla Cima/Baixo
-    // Yaw controla Esquerda/Direita
-    // Inverter yaw para que +100 seja Esquerda, -100 seja Direita
-    yaw = -yaw;
-
-    // Normalizar ângulos
+    yaw = -yaw; // inverter yaw conforme esperado
     yaw = normalizeDeg(yaw);
     pitch = normalizeDeg(pitch);
     roll = normalizeDeg(roll);
 
-    world.style.transform=`rotateZ(${-yaw}deg) rotateX(${-pitch}deg) rotateY(${roll}deg)`;
+    // Em vez de rotacionar o cubo, rotacionamos a câmera (viewport)
+    viewport.style.transform=`rotateZ(${roll}deg) rotateX(${pitch}deg) rotateY(${yaw}deg)`;
 
     let face="Frente";
     if(pitch > 140) face="Cima";
@@ -200,9 +192,6 @@
     else if(yaw > 45) face="Esquerda";
     else if(yaw < -45) face="Direita";
 
-    h.alpha.textContent=raw.alpha.toFixed(1);
-    h.beta.textContent=raw.beta.toFixed(1);
-    h.gamma.textContent=raw.gamma.toFixed(1);
     h.yaw.textContent=yaw.toFixed(1);
     h.pitch.textContent=pitch.toFixed(1);
     h.roll.textContent=roll.toFixed(1);

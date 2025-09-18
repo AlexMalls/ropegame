@@ -102,7 +102,7 @@
     </aside>
   </main>
 
-  <footer>© Tester Gyro v1.3</footer>
+  <footer>© Tester Gyro v1.4</footer>
 </div>
 
 <div class="modal" id="debug-modal">
@@ -119,12 +119,10 @@
 
 <script>
 (function(){
-  // ===== Utils: graus/radianos e quaternion
   const deg2rad = d => d * Math.PI / 180;
   const rad2deg = r => r * 180 / Math.PI;
   function qMul(a,b){const[aw,ax,ay,az]=a,[bw,bx,by,bz]=b;return[aw*bw-ax*bx-ay*by-az*bz,aw*bx+ax*bw+ay*bz-az*by,aw*by-ax*bz+ay*bw+az*bx,aw*bz+ax*by-ay*bx+az*bw];}
   function qConj(q){return[q[0],-q[1],-q[2],-q[3]];}
-  // Euler Z-X-Y (alpha Z, beta X, gamma Y) → quat
   function eulerZXYToQuat(alpha,beta,gamma){
     const z=deg2rad(alpha), x=deg2rad(beta), y=deg2rad(gamma);
     const qz=[Math.cos(z/2),0,0,Math.sin(z/2)];
@@ -132,13 +130,11 @@
     const qy=[Math.cos(y/2),0,Math.sin(y/2),0];
     return qMul(qMul(qz,qx),qy);
   }
-  // Compensa rotação da tela (rotação em Z)
   function applyScreenQuat(q, angleDeg){
     const z=deg2rad(-angleDeg);
     const qz=[Math.cos(z/2),0,0,Math.sin(z/2)];
     return qMul(q,qz);
   }
-  // Quat → yaw(Z), pitch(Y), roll(X) (convenção ZYX)
   function quatToYPR(q){
     const [w,x,y,z]=q;
     const siny_cosp=2*(w*z+x*y); const cosy_cosp=1-2*(y*y+z*z); const yaw=Math.atan2(siny_cosp,cosy_cosp);
@@ -149,146 +145,70 @@
   function normalizeDeg(a){ let d=a%360; if(d>180) d-=360; if(d<-180) d+=360; return d; }
   function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
 
-  // ===== DOM refs
-  const status = document.getElementById('status-text');
-  const world = document.getElementById('world');
-  const debugModal = document.getElementById('debug-modal');
-  const debugText = document.getElementById('debug-text');
-  const orientationEl = document.getElementById('orientation');
+  const status=document.getElementById('status-text');
+  const world=document.getElementById('world');
+  const debugModal=document.getElementById('debug-modal');
+  const debugText=document.getElementById('debug-text');
+  const orientationEl=document.getElementById('orientation');
+  const btnStart=document.getElementById('btn-start');
+  const btnStop=document.getElementById('btn-stop');
+  const btnPerm=document.getElementById('btn-permission');
+  const btnCal=document.getElementById('btn-calibrate');
+  const btnCopy=document.getElementById('btn-copy');
+  const btnClose=document.getElementById('btn-close-modal');
 
-  const btnStart = document.getElementById('btn-start');
-  const btnStop = document.getElementById('btn-stop');
-  const btnPerm = document.getElementById('btn-permission');
-  const btnCal = document.getElementById('btn-calibrate');
-  const btnCopy = document.getElementById('btn-copy');
-  const btnClose = document.getElementById('btn-close-modal');
+  const h={ alpha:document.getElementById('alpha'), beta:document.getElementById('beta'), gamma:document.getElementById('gamma'), yaw:document.getElementById('yaw'), pitch:document.getElementById('pitch'), roll:document.getElementById('roll'), face:document.getElementById('face') };
 
-  const h = {
-    alpha: document.getElementById('alpha'),
-    beta: document.getElementById('beta'),
-    gamma: document.getElementById('gamma'),
-    yaw: document.getElementById('yaw'),
-    pitch: document.getElementById('pitch'),
-    roll: document.getElementById('roll'),
-    face: document.getElementById('face'),
-  };
-
-  // ===== Estado
   let running=false, rafId=0, lastSample=0; const sampleHz=2, sampleInterval=1000/sampleHz;
   let raw={ alpha:0,beta:0,gamma:0, absolute:false };
   let screenAngle=getScreenAngle();
-  let qCal=[1,0,0,0]; // referência de calibração ("frente")
+  let qCal=[1,0,0,0];
+  const logs={ meta:{ version:'1.4', startedAt:null, endedAt:null, sampleHz }, device:[], interpreted:[] };
 
-  const logs={
-    meta:{ version:'1.3', startedAt:null, endedAt:null, sampleHz },
-    device:[], // alpha/beta/gamma + screenAngle
-    interpreted:[], // yaw/pitch/roll/face
-  };
+  function getScreenAngle(){ if(screen.orientation&&typeof screen.orientation.angle==='number') return screen.orientation.angle; return typeof window.orientation==='number'?window.orientation:0; }
+  window.addEventListener('orientationchange',()=>{screenAngle=getScreenAngle();});
 
-  function getScreenAngle(){
-    if (screen.orientation && typeof screen.orientation.angle==='number') return screen.orientation.angle; 
-    return typeof window.orientation==='number'? window.orientation : 0;
-  }
-  window.addEventListener('orientationchange',()=>{ screenAngle=getScreenAngle(); });
+  async function requestPermissionIfNeeded(){ if(!window.DeviceOrientationEvent) return true; if(typeof DeviceOrientationEvent.requestPermission==='function'){ try{ return (await DeviceOrientationEvent.requestPermission())==='granted'; }catch{return false;} } return true; }
+  btnPerm.addEventListener('click',async()=>{const ok=await requestPermissionIfNeeded();status.textContent=ok?'Permissão concedida.':'Permissão negada.';});
 
-  // ===== Permissão (iOS)
-  async function requestPermissionIfNeeded(){
-    if (!window.DeviceOrientationEvent) return true;
-    if (typeof DeviceOrientationEvent.requestPermission==='function'){
-      try{ return (await DeviceOrientationEvent.requestPermission())==='granted'; }catch{ return false; }
-    }
-    return true;
-  }
-  btnPerm.addEventListener('click', async()=>{
-    const ok=await requestPermissionIfNeeded();
-    status.textContent = ok? 'Permissão concedida.' : 'Permissão negada.';
-  });
+  window.addEventListener('deviceorientation',(e)=>{ if(typeof e.alpha==='number') raw.alpha=e.alpha; if(typeof e.beta==='number') raw.beta=e.beta; if(typeof e.gamma==='number') raw.gamma=e.gamma; raw.absolute=!!e.absolute; },{passive:true});
 
-  // ===== Leitura do sensor
-  window.addEventListener('deviceorientation', (e)=>{
-    if (typeof e.alpha==='number') raw.alpha=e.alpha;
-    if (typeof e.beta==='number')  raw.beta=e.beta;
-    if (typeof e.gamma==='number') raw.gamma=e.gamma;
-    raw.absolute = !!e.absolute;
-  }, { passive:true });
+  function computeCurrentQuat(){ return applyScreenQuat(eulerZXYToQuat(raw.alpha,raw.beta,raw.gamma),screenAngle); }
+  function currentCalibratedQuat(){ return qMul(qConj(qCal),computeCurrentQuat()); }
+  btnCal.addEventListener('click',()=>{ qCal=computeCurrentQuat(); status.textContent='Recalibrado: posição atual = Frente.'; });
 
-  // ===== Calibração
-  function computeCurrentQuat(){
-    const qEuler = eulerZXYToQuat(raw.alpha, raw.beta, raw.gamma);
-    return applyScreenQuat(qEuler, screenAngle);
-  }
-  function currentCalibratedQuat(){
-    // qRel = inv(qCal) * qCurrent → após calibração, posição atual vira "frente"
-    const qNow = computeCurrentQuat();
-    return qMul(qConj(qCal), qNow);
-  }
-  btnCal.addEventListener('click', ()=>{
-    qCal = computeCurrentQuat(); // define orientação atual como "frente"
-    status.textContent = 'Recalibrado: posição atual = Frente.';
-  });
-
-  // ===== Face alvo
-  function faceFrom(yaw, pitch){
-    const y = normalizeDeg(yaw), p = clamp(pitch,-90,90);
-    if (p > 45) return 'Cima';
-    if (p < -45) return 'Baixo';
-    if (Math.abs(y) <= 45) return 'Frente';
-    if (Math.abs(y) >= 135) return 'Trás';
-    return y > 0 ? 'Direita' : 'Esquerda';
+  function faceFrom(yaw,pitch){
+    // Separar lógica: yaw → esquerda/direita, pitch → cima/baixo
+    if(pitch>45) return 'Cima';
+    if(pitch<-45) return 'Baixo';
+    if(yaw>30) return 'Direita';
+    if(yaw<-30) return 'Esquerda';
+    return 'Frente';
   }
 
-  // ===== Loop
   function tick(ts){
     if(!running) return;
-    const qRel = currentCalibratedQuat();
-    const ypr = quatToYPR(qRel); // já compensado por orientação de tela e calibração
-
-    // Atualiza mundo (1ª pessoa: mundo gira inverso)
-    world.style.transform = `rotateZ(${-ypr.yaw}deg) rotateX(${-ypr.pitch}deg) rotateY(${ypr.roll}deg)`;
-
-    const face = faceFrom(ypr.yaw, ypr.pitch);
-
-    // HUD
-    h.alpha.textContent = raw.alpha.toFixed(1);
-    h.beta.textContent  = raw.beta.toFixed(1);
-    h.gamma.textContent = raw.gamma.toFixed(1);
-    h.yaw.textContent   = ypr.yaw.toFixed(1);
-    h.pitch.textContent = ypr.pitch.toFixed(1);
-    h.roll.textContent  = ypr.roll.toFixed(1);
-    h.face.textContent  = face;
-    orientationEl.textContent = (Math.abs(screenAngle)===90)?'Paisagem':'Retrato';
-
-    // Log 10 Hz
-    if (ts - lastSample >= sampleInterval){
-      lastSample = ts;
-      const t = Date.now();
-      logs.device.push({ t, alpha:raw.alpha, beta:raw.beta, gamma:raw.gamma, absolute:raw.absolute, screenAngle });
-      logs.interpreted.push({ t, yaw:ypr.yaw, pitch:ypr.pitch, roll:ypr.roll, face, orientation: (Math.abs(screenAngle)===90)?'landscape':'portrait' });
-    }
-
-    rafId = requestAnimationFrame(tick);
+    const qRel=currentCalibratedQuat();
+    const ypr=quatToYPR(qRel);
+    world.style.transform=`rotateZ(${-ypr.yaw}deg) rotateX(${-ypr.pitch}deg) rotateY(${ypr.roll}deg)`;
+    const face=faceFrom(ypr.yaw,ypr.pitch);
+    h.alpha.textContent=raw.alpha.toFixed(1);
+    h.beta.textContent=raw.beta.toFixed(1);
+    h.gamma.textContent=raw.gamma.toFixed(1);
+    h.yaw.textContent=ypr.yaw.toFixed(1);
+    h.pitch.textContent=ypr.pitch.toFixed(1);
+    h.roll.textContent=ypr.roll.toFixed(1);
+    h.face.textContent=face;
+    orientationEl.textContent=(Math.abs(screenAngle)===90)?'Paisagem':'Retrato';
+    if(ts-lastSample>=sampleInterval){ lastSample=ts; const t=Date.now(); logs.device.push({t,alpha:raw.alpha,beta:raw.beta,gamma:raw.gamma,absolute:raw.absolute,screenAngle}); logs.interpreted.push({t,yaw:ypr.yaw,pitch:ypr.pitch,roll:ypr.roll,face,orientation:(Math.abs(screenAngle)===90)?'landscape':'portrait'}); }
+    rafId=requestAnimationFrame(tick);
   }
 
-  // ===== Controles
-  btnStart.onclick = async ()=>{
-    const ok = await requestPermissionIfNeeded();
-    if (!ok){ status.textContent='Permissão negada.'; return; }
-    running = true; logs.device.length=0; logs.interpreted.length=0; logs.meta.startedAt = new Date().toISOString(); logs.meta.endedAt=null; lastSample=performance.now();
-    status.textContent='Gravando…';
-    if (document.documentElement.requestFullscreen) { document.documentElement.requestFullscreen(); }
-    rafId = requestAnimationFrame(tick);
-  };
-  btnStop.onclick = ()=>{
-    if(!running) return;
-    running=false; cancelAnimationFrame(rafId); logs.meta.endedAt = new Date().toISOString(); status.textContent='Parado';
-    const payload = { meta: logs.meta, device: logs.device, interpreted: logs.interpreted };
-    debugText.value = JSON.stringify(payload, null, 2);
-    debugModal.classList.add('open');
-  };
-  btnClose.onclick = ()=> debugModal.classList.remove('open');
-  btnCopy.onclick = ()=> navigator.clipboard.writeText(debugText.value);
+  btnStart.onclick=async()=>{ const ok=await requestPermissionIfNeeded(); if(!ok){status.textContent='Permissão negada.';return;} running=true; logs.device.length=0; logs.interpreted.length=0; logs.meta.startedAt=new Date().toISOString(); logs.meta.endedAt=null; lastSample=performance.now(); status.textContent='Gravando…'; if(document.documentElement.requestFullscreen){document.documentElement.requestFullscreen();} rafId=requestAnimationFrame(tick); };
+  btnStop.onclick=()=>{ if(!running) return; running=false; cancelAnimationFrame(rafId); logs.meta.endedAt=new Date().toISOString(); status.textContent='Parado'; const payload={meta:logs.meta,device:logs.device,interpreted:logs.interpreted}; debugText.value=JSON.stringify(payload,null,2); debugModal.classList.add('open'); };
+  btnClose.onclick=()=>debugModal.classList.remove('open');
+  btnCopy.onclick=()=>navigator.clipboard.writeText(debugText.value);
 })();
 </script>
 </body>
 </html>
-

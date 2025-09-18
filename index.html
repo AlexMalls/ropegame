@@ -8,25 +8,22 @@
     :root {
       --bg: #0b0f14;
       --panel: #121821;
-      --card: #0f1520;
       --text: #e7eef7;
       --muted: #94a3b8;
       --accent: #60a5fa;
-      --accent-2: #34d399;
       --danger: #f87171;
       --warn: #fbbf24;
-      --shadow: 0 10px 30px rgba(0,0,0,.35);
-      --radius: 16px;
+      --radius: 12px;
     }
     * { box-sizing: border-box; }
-    html, body { height: 100%; background: var(--bg); color: var(--text); margin: 0; font-family: Inter, sans-serif; }
+    html, body { height: 100%; margin: 0; font-family: Inter, sans-serif; background: var(--bg); color: var(--text); }
 
     .app { display: flex; flex-direction: column; height: 100%; }
 
-    header { display:flex; flex-direction: column; gap: 8px; align-items:center; justify-content:center; padding: 8px; background: var(--panel); position: sticky; top:0; z-index: 10; }
+    header { display:flex; flex-direction: column; gap: 6px; align-items:center; justify-content:center; padding: 8px; background: var(--panel); position: sticky; top:0; z-index: 10; }
     header h1 { font-size: 14px; margin:0; font-weight:600; text-align: center; }
     .controls { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; }
-    button { flex: 1 1 auto; min-width: 120px; border:none; border-radius:10px; padding:10px; font-weight:600; cursor:pointer; color:#fff; }
+    button { flex: 1 1 auto; min-width: 100px; border:none; border-radius:8px; padding:8px; font-weight:600; cursor:pointer; color:#fff; font-size:13px; }
     button.primary { background: #2563eb; }
     button.success { background: #059669; }
     button.warn { background: #f59e0b; color:#000; }
@@ -34,13 +31,13 @@
 
     .statusbar { text-align:center; font-size: 12px; color: var(--muted); }
 
-    main { flex:1; display:flex; flex-direction: column; padding: 8px; gap:8px; }
+    main { flex:1; display:flex; flex-direction: column; padding: 6px; gap:6px; }
 
     .viewport-wrap { flex:1; background:#0a0f18; border-radius: var(--radius); position: relative; overflow:hidden; }
     .viewport { position: absolute; inset: 0; perspective: 900px; }
     .world { position:absolute; inset:0; transform-style: preserve-3d; }
     .cube { position:absolute; top:50%; left:50%; transform-style: preserve-3d; width: 600px; height: 600px; transform: translate(-50%, -50%); }
-    .face { position:absolute; width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size: 32px; font-weight:800; color:#fff; background: rgba(21,30,45,.85); border:1px solid rgba(255,255,255,.1); }
+    .face { position:absolute; width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size: 28px; font-weight:800; color:#fff; background: rgba(21,30,45,.85); border:1px solid rgba(255,255,255,.1); }
     .front  { transform: translateZ(300px); }
     .back   { transform: rotateY(180deg) translateZ(300px); }
     .right  { transform: rotateY(90deg) translateZ(300px); }
@@ -48,18 +45,18 @@
     .top    { transform: rotateX(90deg) translateZ(300px); }
     .bottom { transform: rotateX(-90deg) translateZ(300px); }
 
-    .side { background: var(--panel); border-radius: var(--radius); padding: 8px; font-size:12px; max-height: 200px; overflow-y:auto; }
-    .side h2 { font-size: 13px; margin:0 0 6px; text-align:center; }
+    .hud { background: var(--panel); border-radius: var(--radius); padding: 6px; font-size:12px; display: grid; grid-template-columns: repeat(2, 1fr); gap:4px; }
+    .hud h2 { grid-column: 1/-1; font-size: 13px; margin:0 0 4px; text-align:center; }
     .kv { display:flex; justify-content:space-between; font-family: monospace; font-size:11px; padding:2px 0; }
 
-    footer { padding: 8px; font-size: 11px; text-align:center; background: var(--panel); }
+    footer { padding: 6px; font-size: 11px; text-align:center; background: var(--panel); }
 
     .modal { position: fixed; inset: 0; display:none; place-items:center; background: rgba(0,0,0,.7); z-index: 50; }
     .modal.open { display:grid; }
-    .modal-card { width: 95vw; max-height: 85vh; background: var(--bg); border-radius: 12px; display:flex; flex-direction:column; overflow: hidden; }
-    .modal-body { padding: 8px; flex:1; overflow:auto; }
+    .modal-card { width: 95vw; max-height: 85vh; background: var(--bg); border-radius: var(--radius); display:flex; flex-direction:column; overflow: hidden; }
+    .modal-body { padding: 6px; flex:1; overflow:auto; }
     textarea { width: 100%; min-height: 60vh; border:none; background:#000; color:#0f0; font-family: monospace; font-size: 11px; padding: 6px; }
-    .modal-actions { display:flex; justify-content:space-around; padding: 8px; background: var(--panel); }
+    .modal-actions { display:flex; justify-content:space-around; padding: 6px; background: var(--panel); }
   </style>
 </head>
 <body>
@@ -67,9 +64,9 @@
   <header>
     <h1>Giroscópio Tester — 1ª Pessoa</h1>
     <div class="controls">
-      <button id="btn-permission" class="warn">Permitir Sensor</button>
+      <button id="btn-permission" class="warn">Permitir</button>
       <button id="btn-calibrate" class="success">Recalibrar</button>
-      <button id="btn-start" class="primary">Iniciar Teste</button>
+      <button id="btn-start" class="primary">Iniciar</button>
       <button id="btn-stop" class="danger">Parar</button>
     </div>
     <div class="statusbar" id="status-text">Aguardando…</div>
@@ -91,7 +88,7 @@
       </div>
     </section>
 
-    <aside class="side">
+    <aside class="hud">
       <h2>HUD</h2>
       <div class="kv"><span>alpha</span><b id="alpha">—</b></div>
       <div class="kv"><span>beta</span><b id="beta">—</b></div>
@@ -100,10 +97,11 @@
       <div class="kv"><span>pitch</span><b id="pitch">—</b></div>
       <div class="kv"><span>roll</span><b id="roll">—</b></div>
       <div class="kv"><span>face</span><b id="face">—</b></div>
+      <div class="kv"><span>orientação</span><b id="orientation">—</b></div>
     </aside>
   </main>
 
-  <footer>© Tester Gyro v1.1</footer>
+  <footer>© Tester Gyro v1.2</footer>
 </div>
 
 <div class="modal" id="debug-modal">
@@ -124,6 +122,7 @@
   const world = document.getElementById('world');
   const debugModal = document.getElementById('debug-modal');
   const debugText = document.getElementById('debug-text');
+  const orientationEl = document.getElementById('orientation');
 
   const btnStart = document.getElementById('btn-start');
   const btnStop = document.getElementById('btn-stop');
@@ -135,6 +134,14 @@
   let raw = {alpha:0,beta:0,gamma:0};
   let running = false;
   let logs = [];
+  let screenAngle = getScreenAngle();
+
+  function getScreenAngle(){
+    if (screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
+    return window.orientation || 0;
+  }
+
+  window.addEventListener('orientationchange',()=>{ screenAngle=getScreenAngle(); });
 
   function updateHUD(yaw,pitch,roll,face){
     document.getElementById('alpha').textContent = raw.alpha.toFixed(1);
@@ -144,6 +151,7 @@
     document.getElementById('pitch').textContent = pitch.toFixed(1);
     document.getElementById('roll').textContent = roll.toFixed(1);
     document.getElementById('face').textContent = face;
+    orientationEl.textContent = (Math.abs(screenAngle)===90)?'Paisagem':'Retrato';
   }
 
   function faceFrom(yaw,pitch){
@@ -164,9 +172,20 @@
     if(!running) return;
     const yaw=raw.alpha, pitch=raw.beta, roll=raw.gamma;
     const face=faceFrom(yaw,pitch);
-    world.style.transform = `rotateZ(${-yaw}deg) rotateX(${-pitch}deg) rotateY(${roll}deg)`;
-    updateHUD(yaw,pitch,roll,face);
-    logs.push({t:Date.now(),alpha:raw.alpha,beta:raw.beta,gamma:raw.gamma,yaw,pitch,roll,face});
+
+    // Ajusta rotação considerando orientação da tela
+    let adjustedYaw=yaw, adjustedPitch=pitch, adjustedRoll=roll;
+    if(Math.abs(screenAngle)===90){
+      // em paisagem, troca pitch/roll
+      adjustedYaw = yaw;
+      adjustedPitch = roll;
+      adjustedRoll = pitch;
+    }
+
+    world.style.transform = `rotateZ(${-adjustedYaw}deg) rotateX(${-adjustedPitch}deg) rotateY(${adjustedRoll}deg)`;
+    updateHUD(adjustedYaw,adjustedPitch,adjustedRoll,face);
+
+    logs.push({t:Date.now(),alpha:raw.alpha,beta:raw.beta,gamma:raw.gamma,yaw:adjustedYaw,pitch:adjustedPitch,roll:adjustedRoll,face,screenAngle});
     requestAnimationFrame(tick);
   }
 

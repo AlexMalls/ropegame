@@ -22,23 +22,23 @@
       scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
       // Câmera simples apontando para o centro
-      const camera = new BABYLON.ArcRotateCamera('cam', Math.PI/3, Math.PI/3, 8, new BABYLON.Vector3(0,1,0), scene);
+      const camera = new BABYLON.ArcRotateCamera('cam', Math.PI/3, Math.PI/2.05, 10, new BABYLON.Vector3(0,0.3,0), scene);
       camera.attachControl(canvas, true);
 
       // Luz básica
       const light = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0,1,0), scene);
-      light.intensity = 1.0;
+      light.intensity = 0.9;
 
       // Sala: caixa invertida (olhamos de dentro)
-      const room = BABYLON.MeshBuilder.CreateBox('room', { size: 12, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
+      const room = BABYLON.MeshBuilder.CreateBox('room', { size: 80, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
       const roomMat = new BABYLON.StandardMaterial('roomMat', scene);
-      roomMat.diffuseColor = new BABYLON.Color3(0.12, 0.14, 0.18);
+      roomMat.diffuseColor = new BABYLON.Color3(0.06, 0.07, 0.10);
       roomMat.specularColor = new BABYLON.Color3(0, 0, 0);
       room.material = roomMat;
 
       // Cubo com textura crate.png do Playground
-      const cube = BABYLON.MeshBuilder.CreateBox('cube', { size: 2 }, scene);
-      cube.position = new BABYLON.Vector3(0, 1, 0);
+      const cube = BABYLON.MeshBuilder.CreateBox('cube', { size: 1 }, scene);
+      cube.position = new BABYLON.Vector3(0, 0.5, -18);
       const crateMat = new BABYLON.StandardMaterial('crateMat', scene);
       crateMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/crate.png', scene);
       crateMat.specularColor = new BABYLON.Color3(0.1,0.1,0.1);

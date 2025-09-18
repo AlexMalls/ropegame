@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
   <title>Sala 3D – Giroscópio</title>
 
-  <!-- Import map para o navegador entender o "three" -->
   <script type="importmap">
   {
     "imports": {
@@ -20,11 +19,12 @@
       position: fixed; inset: 0 0 auto 0; display:flex; gap:.5rem; padding:.5rem;
       justify-content:center; pointer-events:none;
     }
-    #btnPermissao, #btnDebug {
+    #btnPermissao, #btnDebug, #btnRecalibrar {
       pointer-events:auto; font:600 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto;
       padding:.6rem .9rem; border-radius:999px; border:none; background:#fff; cursor:pointer;
     }
     #btnDebug { background:#eee; }
+    #btnRecalibrar { background:#cfc; }
     #debug {
       position: fixed; bottom:.5rem; left:.5rem; color:#fff; font:12px/1.3 ui-monospace, Menlo, Consolas, monospace;
       background:rgba(0,0,0,.45); padding:.5rem .6rem; border-radius:.5rem; display:none; white-space:pre;
@@ -34,6 +34,7 @@
 <body>
   <div id="hud">
     <button id="btnPermissao">Ativar giroscópio</button>
+    <button id="btnRecalibrar">Recalibrar</button>
     <button id="btnDebug" aria-pressed="false">Debug</button>
   </div>
   <div id="debug"></div>
@@ -49,11 +50,11 @@
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     const scene = new THREE.Scene();
 
-    const camera = new THREE.PerspectiveCamera(75, 2, 0.01, 100);
+    const camera = new THREE.PerspectiveCamera(90, 2, 0.01, 100); // FOV maior
     camera.position.set(0, 0, 0);
     scene.add(camera);
 
-    // --- Sala cúbica com texto em cada face ---
+    // --- Sala cúbica maior e textos menores ---
     function faceTexture(label, bg='#444', fg='#fff') {
       const size = 1024;
       const cnv = document.createElement('canvas');
@@ -67,7 +68,7 @@
         ctx.beginPath(); ctx.moveTo(0,p); ctx.lineTo(size,p); ctx.stroke();
       }
       ctx.fillStyle = fg;
-      ctx.font = "bold 160px system-ui, -apple-system, Segoe UI, Roboto";
+      ctx.font = "bold 100px system-ui, -apple-system, Segoe UI, Roboto"; // menor
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.shadowColor = "rgba(0,0,0,.35)"; ctx.shadowBlur = 16;
       ctx.fillText(label, size/2, size/2);
@@ -83,27 +84,35 @@
       new THREE.MeshBasicMaterial({ map: faceTexture("TRÁS",     "#2a8a8d"), side: THREE.BackSide })  // -Z
     ];
 
-    const room = new THREE.Mesh(new THREE.BoxGeometry(10,10,10), materials);
+    const room = new THREE.Mesh(new THREE.BoxGeometry(20,20,20), materials);
     scene.add(room);
 
     // --- Controles de giroscópio (rotacionam a CÂMERA) ---
     const controls = new DeviceOrientationControls(camera);
     controls.enabled = false;
 
+    // Offset de recalibração
+    let calibrationOffset = new THREE.Quaternion();
+
     // iOS exige permissão via gesto do usuário
-    const btn = document.getElementById('btnPermissao');
-    btn.addEventListener('click', async () => {
+    const btnPermissao = document.getElementById('btnPermissao');
+    btnPermissao.addEventListener('click', async () => {
       try {
         if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
           const resp = await DeviceOrientationEvent.requestPermission();
           if (resp !== 'granted') throw new Error('Permissão negada');
         }
         controls.enabled = true;
-        btn.textContent = "Giroscópio ativo";
-        btn.disabled = true;
+        btnPermissao.textContent = "Giroscópio ativo";
+        btnPermissao.disabled = true;
       } catch (err) {
         alert("Não foi possível ativar o giroscópio: " + err.message);
       }
+    });
+
+    // Botão Recalibrar
+    document.getElementById('btnRecalibrar').addEventListener('click', () => {
+      calibrationOffset.copy(camera.quaternion).invert();
     });
 
     // --- Debug opcional ---
@@ -140,6 +149,9 @@
     renderer.setAnimationLoop(() => {
       resizeRendererToDisplaySize();
       if (controls.enabled) controls.update();
+
+      // aplica recalibração
+      camera.quaternion.premultiply(calibrationOffset);
 
       if (debugDiv.style.display === 'block') {
         const { yaw, pitch, roll } = eulerFromCamera(camera);

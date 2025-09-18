@@ -3,45 +3,83 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Sala + Cubo (mínimo)</title>
+  <title>FPS 3D — Menu + Cena</title>
   <style>
-    html,body{height:100%;margin:0;background:#000}
+    :root{ --navy:#0b2a6b; --navy2:#001021; }
+    html,body{height:100%;margin:0;background:#000;color:#e6ebf5;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
     canvas{width:100%;height:100%;display:block}
+
+    /* ===== Overlay de Menu ===== */
+    #menu{ position:fixed; inset:0; display:grid; place-items:center; z-index:3;
+      background:
+        linear-gradient(180deg, rgba(0,16,33,.66), rgba(0,0,0,.68)),
+        radial-gradient(700px 500px at 50% 18%, rgba(11,42,107,.22), rgba(0,0,0,0) 60%);
+      backdrop-filter: blur(4px) saturate(1.05);
+      -webkit-backdrop-filter: blur(4px) saturate(1.05);
+      transition: opacity .45s ease, visibility .45s ease; }
+    #menu.hide{ opacity:0; visibility:hidden; }
+
+    .panel{ padding:28px 28px 22px; border-radius:18px; width:min(92vw, 520px);
+      background: linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,.22));
+      border:1px solid rgba(255,255,255,.06); box-shadow: 0 20px 60px rgba(0,0,0,.55);
+      text-align:center; }
+    .panel h1{ margin:0 0 .5rem; font-size: clamp(26px, 5vw, 40px); letter-spacing:.4px; }
+    .panel p{ margin:.25rem 0 1.25rem; opacity:.8; font-size: clamp(14px, 2.2vw, 16px); }
+
+    .btn{ appearance:none; border:none; cursor:pointer; padding:14px 28px; font-weight:800; font-size:16px; border-radius:14px;
+      background: linear-gradient(135deg, var(--navy2) 0%, var(--navy) 100%);
+      color:#e6ebf5; box-shadow: 0 12px 34px rgba(11,42,107,.40), inset 0 1px 0 rgba(255,255,255,.07);
+      transition: transform .15s ease, box-shadow .2s ease, filter .2s ease; }
+    .btn:hover{ transform: translateY(-1px); box-shadow: 0 16px 42px rgba(11,42,107,.55), inset 0 1px 0 rgba(255,255,255,.09); }
+    .btn:active{ transform: translateY(0); filter: brightness(.96); }
+    .footer{ margin-top:12px; font-size:12px; opacity:.55; }
   </style>
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
 </head>
 <body>
   <canvas id="game"></canvas>
+
+  <!-- MENU sobrepondo a cena (transparente e escuro) -->
+  <div id="menu" aria-modal="true" role="dialog">
+    <div class="panel" aria-label="Menu inicial">
+      <h1>FPS 3D • Protótipo</h1>
+      <p>Toque/click para começar. Visual minimalista preto + azul‑marinho.</p>
+      <button id="play" class="btn" aria-label="Jogar">Jogar</button>
+      <div class="footer">Dica: no desktop, clique para travar o ponteiro; no mobile, arraste para olhar.</div>
+    </div>
+  </div>
+
   <script>
   (function(){
     const canvas = document.getElementById('game');
+    const menu   = document.getElementById('menu');
+    const play   = document.getElementById('play');
+
     const engine = new BABYLON.Engine(canvas, true);
 
+    // ===== Cena mínima (sala gigante + cubo distante) =====
     function createScene(){
       const scene = new BABYLON.Scene(engine);
       scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
-      // Câmera simples apontando para o centro
+      // Câmera primeira pessoa (olha em torno do próprio eixo)
       const camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 1.2, 38), scene);
       camera.attachControl(canvas, true);
-      // FPS: gira em torno de si mesmo (sem orbitar)
-      camera.speed = 0;
+      camera.speed = 0; // sem WASD
       camera.keysUp = camera.keysDown = camera.keysLeft = camera.keysRight = [];
-      // Clique para pointer lock (opcional)
-      canvas.addEventListener('click', () => { canvas.requestPointerLock?.(); });
 
-      // Luz básica
+      // Luz
       const light = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0,1,0), scene);
-      light.intensity = 0.9;
+      light.intensity = 0.9; // claro, porém sutil
 
-      // Sala: caixa invertida (olhamos de dentro)
+      // Sala gigante (olhamos de dentro)
       const room = BABYLON.MeshBuilder.CreateBox('room', { size: 80, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
       const roomMat = new BABYLON.StandardMaterial('roomMat', scene);
-      roomMat.diffuseColor = new BABYLON.Color3(0.06, 0.07, 0.10);
+      roomMat.diffuseColor = new BABYLON.Color3(0.06, 0.07, 0.10); // mais escura
       roomMat.specularColor = new BABYLON.Color3(0, 0, 0);
       room.material = roomMat;
 
-      // Cubo com textura crate.png do Playground
+      // Cubo referência com textura do Playground
       const cube = BABYLON.MeshBuilder.CreateBox('cube', { size: 1 }, scene);
       cube.position = new BABYLON.Vector3(0, 0.5, -30);
       const crateMat = new BABYLON.StandardMaterial('crateMat', scene);
@@ -49,15 +87,27 @@
       crateMat.specularColor = new BABYLON.Color3(0.1,0.1,0.1);
       cube.material = crateMat;
 
-      // Olhar inicialmente para o cubo (a partir da posição atual)
+      // Enquadramento inicial: olhar ao cubo
       camera.setTarget(cube.position);
 
       return scene;
     }
 
     const scene = createScene();
+
+    // Render loop
     engine.runRenderLoop(() => scene.render());
     window.addEventListener('resize', () => engine.resize());
+
+    // ===== Interação do Menu =====
+    play.addEventListener('click', () => {
+      // fade-out sutil do overlay
+      menu.classList.add('hide');
+      // pointer lock no desktop
+      canvas.requestPointerLock?.();
+      // resize defensivo (caso overlay tenha afetado algo)
+      setTimeout(() => engine.resize(), 0);
+    }, { passive:true });
   })();
   </script>
 </body>

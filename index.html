@@ -138,6 +138,31 @@ const engine = new BABYLON.Engine(canvas, true);
     crateMat.specularColor = new BABYLON.Color3(0.1,0.1,0.1);
     cube.material = crateMat;
 
+    // ===== "Corda" (viga metálica) do player até a caixa =====
+    // Ponto inicial: um pouco abaixo da câmera
+    const beamYStart = Math.max(0.1, camera.position.y - 0.3);
+    const start = new BABYLON.Vector3(camera.position.x, beamYStart, camera.position.z);
+    const end   = cube.position.clone();
+    const dir   = end.subtract(start);
+    const length= dir.length();
+    const mid   = start.add(end).scale(0.5);
+
+    // Box along Z (profundidade = length), alinhado ao alvo
+    const beam = BABYLON.MeshBuilder.CreateBox('beam', { width: 0.15, height: 0.08, depth: length }, scene);
+    beam.position = mid;
+    beam.lookAt(end); // orienta o eixo +Z do box na direção da caixa
+
+    // Material metálico simples com textura do Playground
+    const metalMat = new BABYLON.StandardMaterial('metalMat', scene);
+    metalMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/reflectivity.png', scene);
+    metalMat.specularColor = new BABYLON.Color3(0.6, 0.6, 0.7);
+    metalMat.specularPower = 64;
+    if (metalMat.diffuseTexture) {
+      metalMat.diffuseTexture.uScale = Math.max(1, length / 4); // repete ao longo do comprimento
+      metalMat.diffuseTexture.vScale = 1;
+    }
+    beam.material = metalMat;
+
     // ===== Render loop
     engine.runRenderLoop(() => scene.render());
     window.addEventListener('resize', () => engine.resize());

@@ -5,14 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
   <title>Sala 3D – Giroscópio (Local Controls)</title>
 
-  <!-- Import Map: mapeia 'three' para a mesma versão que estamos usando -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
-    }
-  }
-  </script>
+  import { DeviceOrientationControls } from "/jsm/controls/DeviceOrientationControls.js";
+
 
   <style>
     html, body { height:100%; margin:0; background:#000; overflow:hidden; }
@@ -173,3 +167,4 @@ Roll (Z rolagem): ${roll.toFixed(1)}°`;
   </script>
 </body>
 </html>
+

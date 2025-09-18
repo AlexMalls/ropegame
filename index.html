@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#000000" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>FPS 3D — Menu + HUD (Mobile Gyro Auto)</title>
   <style>
     :root{ --navy:#0b2a6b; --navy2:#001021; --fg:#e6ebf5; }
@@ -90,9 +93,25 @@
     const calBtn = document.getElementById('calBtn');
     const orientBadge = document.getElementById('orientBadge');
 
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && screen.width < 1025);
+    $1
 
-    const engine = new BABYLON.Engine(canvas, true);
+    // ===== Fullscreen (mobile): tentativa no load + garantia no primeiro toque =====
+    async function enterFullscreen(){
+      try{
+        const el = document.documentElement;
+        if (!document.fullscreenElement && el.requestFullscreen){
+          await el.requestFullscreen({ navigationUI: 'hide' }).catch(()=>{});
+        }
+      }catch(_){}
+    }
+    if (isMobile){
+      // tentativa imediata (pode ser bloqueada por política de gesto do usuário)
+      setTimeout(()=>enterFullscreen(),0);
+      // primeira interação de toque: garantir fullscreen
+      const goFS = ()=>{ enterFullscreen(); document.removeEventListener('touchstart', goFS); };
+      document.addEventListener('touchstart', goFS, { passive:true, once:true });
+    }
+const engine = new BABYLON.Engine(canvas, true);
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
@@ -190,6 +209,7 @@
       menu.classList.add('hide');
       hud.setAttribute('aria-hidden','false');
       if (isMobile) {
+        await enterFullscreen();
         await enableGyroAuto();
       } else {
         canvas.requestPointerLock?.();

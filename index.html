@@ -140,7 +140,7 @@ const engine = new BABYLON.Engine(canvas, true);
 
     // ===== "Corda" (viga metálica) do player até a caixa =====
     // Ponto inicial: um pouco abaixo da câmera
-    const beamYStart = Math.max(0.1, camera.position.y - 0.3);
+    const beamYStart = 0.12; // altura ~pés do jogador (levemente acima do piso)
     const start = new BABYLON.Vector3(camera.position.x, beamYStart, camera.position.z);
     const end   = cube.position.clone();
     const dir   = end.subtract(start);

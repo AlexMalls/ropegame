@@ -93,6 +93,9 @@
     const calBtn = document.getElementById('calBtn');
     const orientBadge = document.getElementById('orientBadge');
 
+    // Detecção simples de mobile (UA + touch points)
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && screen.width < 1025);
+
     // ===== Fullscreen (mobile): tentativa no load + garantia no primeiro toque =====
     async function enterFullscreen(){
       try{

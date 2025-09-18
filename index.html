@@ -1,190 +1,468 @@
 <!doctype html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Debug Giroscópio (mapeamento fix landscape)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Giroscópio Tester – 1ª Pessoa</title>
   <style>
-    body { background:#0b0f14; color:#e2e8f0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif; margin:0; padding:12px; }
-    button { margin:4px 6px 8px 0; padding:9px 14px; border:1px solid #334; background:#223; color:#eee; border-radius:8px; }
-    label { margin-left:8px; font-size:14px; color:#9fb0c4; }
-    .scene { width:260px; height:260px; margin:16px auto; perspective:900px; }
-    #cube { width:260px; height:260px; position:relative; transform-style:preserve-3d; will-change:transform; }
-    .face {
-      position:absolute; width:260px; height:260px; border:2px solid #567;
-      background:linear-gradient(180deg,#182538,#0f1b2b); color:#fff; font-weight:700; font-size:20px;
-      display:flex; align-items:center; justify-content:center; border-radius:12px;
-      backface-visibility:hidden; /* <- evita ver a face “de costas” */
+    :root {
+      --bg: #0b0f14;
+      --panel: #121821;
+      --card: #0f1520;
+      --text: #e7eef7;
+      --muted: #94a3b8;
+      --accent: #60a5fa;
+      --accent-2: #34d399;
+      --danger: #f87171;
+      --warn: #fbbf24;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 16px;
     }
-    .front  { transform:translateZ(130px); }
-    .back   { transform:rotateY(180deg) translateZ(130px); }
-    .right  { transform:rotateY( 90deg) translateZ(130px); }
-    .left   { transform:rotateY(-90deg) translateZ(130px); }
-    .top    { transform:rotateX( 90deg) translateZ(130px); }
-    .bottom { transform:rotateX(-90deg) translateZ(130px); }
-    #log { white-space:pre; font:12px/1.45 monospace; background:#0d1117; padding:10px; border:1px solid #2a3444; border-radius:8px; margin-top:12px; max-height:45vh; overflow:auto; }
-    .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; background: radial-gradient(1200px 600px at 50% -200px, #122033 0%, var(--bg) 60%); color: var(--text); }
+    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+
+    .app { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+
+    header { display:flex; align-items:center; justify-content:space-between; padding: 12px 16px; position: sticky; top:0; background: linear-gradient(180deg, rgba(15,21,32,.95) 0%, rgba(15,21,32,.6) 100%); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(255,255,255,.06); z-index: 10; }
+    header h1 { font-size: 16px; letter-spacing:.3px; margin:0; font-weight:600; display:flex; gap:10px; align-items:center; }
+    .badge { font-size: 11px; color: #0c121b; background: var(--accent); padding: 2px 6px; border-radius: 999px; box-shadow: var(--shadow); }
+
+    .controls { display:flex; gap:8px; flex-wrap:wrap; }
+    button { appearance: none; border:1px solid rgba(255,255,255,.08); background: var(--panel); color: var(--text); padding: 10px 14px; border-radius: 12px; font-weight:600; cursor:pointer; transition: .2s transform ease, .2s background-color ease, .2s border-color ease, .2s box-shadow ease; box-shadow: 0 4px 14px rgba(0,0,0,.25) inset, 0 4px 14px rgba(0,0,0,.15); }
+    button:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.18); }
+    button:active { transform: translateY(0); }
+    button.primary { background: linear-gradient(180deg, #1a8cff, #0f6ad8); border-color: rgba(255,255,255,.15); }
+    button.success { background: linear-gradient(180deg, #2dd4bf, #14b8a6); }
+    button.warn { background: linear-gradient(180deg, #fbbf24, #f59e0b); color:#1a1a1a; }
+    button.danger { background: linear-gradient(180deg, #ef4444, #dc2626); }
+
+    .statusbar { display:flex; gap:12px; align-items:center; color: var(--muted); font-size: 12px; }
+    .dot { width:10px; height:10px; border-radius:999px; background: #64748b; box-shadow: 0 0 0 2px rgba(100,116,139,.25); }
+    .dot.live { background: #22c55e; box-shadow: 0 0 16px 1px rgba(34,197,94,.5); }
+    .dot.idle { background: #ef4444; box-shadow: 0 0 16px 1px rgba(239,68,68,.4); }
+
+    main { position: relative; display:grid; grid-template-columns: 1fr 320px; gap: 16px; padding: 16px; }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+
+    /* VIEWPORT (1ª pessoa) */
+    .viewport-wrap { position: relative; background: radial-gradient(800px 400px at 50% 0%, #0b1726, #08101a); border:1px solid rgba(255,255,255,.06); border-radius: var(--radius); box-shadow: var(--shadow); overflow:hidden; min-height: 52vh; }
+    .viewport { position: absolute; inset: 0; perspective: 900px; transform-style: preserve-3d; }
+
+    /* "Mundo" que gira ao redor do usuário (camera fixa, mundo roda) */
+    .world { position:absolute; inset:0; transform-style: preserve-3d; }
+    .cube { position:absolute; top:50%; left:50%; transform-style: preserve-3d; width: 800px; height: 800px; transform: translate(-50%, -50%) translateZ(0px); opacity:.98; }
+
+    .face { position:absolute; width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size: clamp(28px, 6vw, 72px); letter-spacing:.5px; color:#e5f2ff; text-shadow: 0 6px 30px rgba(0,0,0,.6);
+            background: linear-gradient(180deg, rgba(21,30,45,.85), rgba(12,18,28,.85)); border: 1px solid rgba(255,255,255,.07);
+            backdrop-filter: blur(2px); box-shadow: inset 0 0 80px rgba(96,165,250,.15), inset 0 0 160px rgba(45,212,191,.08);
+            border-radius: 18px; }
+    .face small { position:absolute; bottom:12px; font-size:12px; font-weight:600; color: #9fb6cf; letter-spacing:.2px; }
+
+    /* Posicionamento das faces (olho no centro da cube) */
+    .front  { transform: translateZ(400px); }
+    .back   { transform: rotateY(180deg) translateZ(400px); }
+    .right  { transform: rotateY(90deg) translateZ(400px); }
+    .left   { transform: rotateY(-90deg) translateZ(400px); }
+    .top    { transform: rotateX(90deg) translateZ(400px); }
+    .bottom { transform: rotateX(-90deg) translateZ(400px); }
+
+    /* HUD lateral */
+    .side { background: linear-gradient(180deg, rgba(17,25,37,.9), rgba(11,17,27,.9)); border:1px solid rgba(255,255,255,.06); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); }
+    .side h2 { margin: 0 0 10px; font-size: 14px; letter-spacing:.4px; color:#cfe3ff; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+    .card { background: var(--card); border:1px solid rgba(255,255,255,.06); border-radius: 12px; padding: 10px; }
+    .card h3 { margin:0 0 6px; font-size:12px; color:#9fb6cf; }
+    .kv { display:flex; justify-content:space-between; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px; padding:2px 0; }
+    .kv b { color:#d8e9ff; }
+
+    .legend { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    .chip { font-size:11px; padding:6px 8px; border-radius: 10px; border:1px dashed rgba(255,255,255,.12); color:#b7c7dc; background: rgba(9,14,21,.5); }
+
+    footer { padding: 10px 16px; color: var(--muted); font-size: 12px; display:flex; justify-content:space-between; gap:12px; align-items:center; border-top: 1px solid rgba(255,255,255,.06); background: rgba(8,12,18,.6); backdrop-filter: blur(8px); }
+
+    /* Modal Debug */
+    .modal { position: fixed; inset: 0; display:none; place-items:center; background: rgba(1,5,12,.6); backdrop-filter: blur(6px); z-index: 50; }
+    .modal.open { display:grid; }
+    .modal-card { width: min(960px, 92vw); max-height: 80vh; background: linear-gradient(180deg, #0e1521, #0a0f18); border:1px solid rgba(255,255,255,.1); border-radius: 16px; box-shadow: var(--shadow); display:flex; flex-direction:column; overflow: hidden; }
+    .modal-card header { position:relative; }
+    .modal-card header h1 { font-size: 16px; }
+    .modal-body { padding: 0 12px 12px; }
+    .textarea-wrap { position:relative; padding: 12px; }
+    textarea { width: 100%; min-height: 48vh; border-radius: 12px; background: #0a0f18; color: #dce9ff; border:1px solid rgba(255,255,255,.12); padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono"; font-size: 12px; line-height: 1.5; }
+    .modal-actions { display:flex; justify-content:flex-end; gap:8px; padding: 12px; border-top:1px solid rgba(255,255,255,.08); }
+
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
   </style>
 </head>
 <body>
-  <div class="row">
-    <button id="btnStart">Iniciar</button>
-    <button id="btnStop">Stop</button>
-    <button id="btnCalibrate">Calibrar neutro</button>
-    <label><input type="checkbox" id="lockOri" checked> Travar orientação no início</label>
-    <label><input type="checkbox" id="invertX"> Inverter X (pitch)</label>
-    <label><input type="checkbox" id="invertY"> Inverter Y (roll)</label>
-  </div>
+<div class="app">
+  <header>
+    <h1>
+      <span class="badge">Gyro</span>
+      Giroscópio Tester — 1ª Pessoa (DEBUG)
+    </h1>
+    <div class="controls">
+      <button id="btn-permission" class="warn">Permitir Sensor</button>
+      <button id="btn-calibrate" class="success">Recalibrar</button>
+      <button id="btn-start" class="primary">Iniciar Teste</button>
+      <button id="btn-stop" class="danger">Parar Teste</button>
+    </div>
+    <div class="statusbar">
+      <div class="dot" id="live-dot"></div>
+      <span id="status-text">Aguardando…</span>
+    </div>
+  </header>
 
-  <div class="scene">
-    <div id="cube">
-      <div class="face front">FRENTE</div>
-      <div class="face back">TRÁS</div>
-      <div class="face right">DIREITA</div>
-      <div class="face left">ESQUERDA</div>
-      <div class="face top">CIMA</div>
-      <div class="face bottom">BAIXO</div>
+  <main>
+    <section class="viewport-wrap" aria-label="Visão em primeira pessoa">
+      <div class="viewport">
+        <div class="world" id="world">
+          <div class="cube" id="cube">
+            <div class="face front">Frente <small>Face +Z</small></div>
+            <div class="face back">Trás <small>Face −Z</small></div>
+            <div class="face right">Direita <small>Face +X</small></div>
+            <div class="face left">Esquerda <small>Face −X</small></div>
+            <div class="face top">Cima <small>Face +Y</small></div>
+            <div class="face bottom">Baixo <small>Face −Y</small></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <h2>Hud & Leituras</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Dados do Celular (raw)</h3>
+          <div class="kv"><span>alpha (° Z)</span><b id="alpha">—</b></div>
+          <div class="kv"><span>beta (° X)</span><b id="beta">—</b></div>
+          <div class="kv"><span>gamma (° Y)</span><b id="gamma">—</b></div>
+          <div class="kv"><span>abs?</span><b id="abs">—</b></div>
+          <div class="kv"><span>screenAngle</span><b id="scr">—</b></div>
+        </div>
+        <div class="card">
+          <h3>Dados Interpretados</h3>
+          <div class="kv"><span>yaw (°)</span><b id="yaw">—</b></div>
+          <div class="kv"><span>pitch (°)</span><b id="pitch">—</b></div>
+          <div class="kv"><span>roll (°)</span><b id="roll">—</b></div>
+          <div class="kv"><span>face alvo</span><b id="face">—</b></div>
+        </div>
+      </div>
+      <div class="legend">
+        <span class="chip">1ª pessoa (mundo gira)</span>
+        <span class="chip">Recalibrar = “olhando à frente”</span>
+        <span class="chip">Logs 10 Hz</span>
+        <span class="chip">Cópia completa no Encerrar</span>
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    <div>Use o telefone e mova-se devagar para leituras estáveis.</div>
+    <div>© Tester Gyro v1.0</div>
+  </footer>
+</div>
+
+<!-- Modal Debug -->
+<div class="modal" id="debug-modal" role="dialog" aria-modal="true" aria-labelledby="debug-title">
+  <div class="modal-card">
+    <header>
+      <h1 id="debug-title">Relatório de Debug</h1>
+    </header>
+    <div class="modal-body">
+      <div class="textarea-wrap">
+        <label class="sr-only" for="debug-text">Conteúdo do Debug</label>
+        <textarea id="debug-text" readonly></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button id="btn-copy" class="primary">Copiar</button>
+      <button id="btn-close-modal">Fechar</button>
     </div>
   </div>
-
-  <div id="log"></div>
+</div>
 
 <script>
-(()=> {
-  const cube = document.getElementById("cube");
-  const logEl = document.getElementById("log");
-  const btnStart = document.getElementById("btnStart");
-  const btnStop = document.getElementById("btnStop");
-  const btnCal = document.getElementById("btnCalibrate");
-  const lockOriCb = document.getElementById("lockOri");
-  const invertXCb = document.getElementById("invertX");
-  const invertYCb = document.getElementById("invertY");
+(() => {
+  // ===== UTIL: Graus / Radianos
+  const deg2rad = d => d * Math.PI / 180;
+  const rad2deg = r => r * 180 / Math.PI;
 
-  let started = false;
-  let offsets = { pitch:0, roll:0 };
-  let lastAngles = { alpha:0, beta:0, gamma:0 };
-  let raf = 0, intervalId = 0;
-  let lockedAngle = null;
+  // ===== UTIL: Quaternions
+  function quatMultiply(a, b) {
+    const [aw, ax, ay, az] = a;
+    const [bw, bx, by, bz] = b;
+    return [
+      aw*bw - ax*bx - ay*by - az*bz,
+      aw*bx + ax*bw + ay*bz - az*by,
+      aw*by - ax*bz + ay*bw + az*bx,
+      aw*bz + ax*by - ay*bx + az*bw,
+    ];
+  }
+  function quatConjugate(q){ return [q[0], -q[1], -q[2], -q[3]]; }
 
-  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-  const nrm = ang => ((ang % 360) + 360) % 360;
+  // Convert DeviceOrientation (alpha, beta, gamma) to quaternion.
+  // Spec: alpha (Z, 0..360), beta (X, -180..180), gamma (Y, -90..90)
+  // Composition Z * X * Y (intrinsic Tait-Bryan Z-X'-Y'')
+  function eulerZXYToQuat(alpha, beta, gamma) {
+    const z = deg2rad(alpha);
+    const x = deg2rad(beta);
+    const y = deg2rad(gamma);
 
+    const cz = Math.cos(z/2), sz = Math.sin(z/2);
+    const cx = Math.cos(x/2), sx = Math.sin(x/2);
+    const cy = Math.cos(y/2), sy = Math.sin(y/2);
+
+    // q = Rz(z) * Rx(x) * Ry(y)
+    const qz = [Math.cos(z/2), 0, 0, Math.sin(z/2)];
+    const qx = [Math.cos(x/2), Math.sin(x/2), 0, 0];
+    const qy = [Math.cos(y/2), 0, Math.sin(y/2), 0];
+    return quatMultiply(quatMultiply(qz, qx), qy);
+  }
+
+  // Apply screen orientation (rotate around Z)
+  function applyScreenQuat(q, screenAngleDeg) {
+    const z = deg2rad(-screenAngleDeg); // inverse rotate world when screen rotates
+    const qz = [Math.cos(z/2), 0, 0, Math.sin(z/2)];
+    return quatMultiply(q, qz);
+  }
+
+  // Quaternion → yaw/pitch/roll (ZYX yaw-first convention)
+  function quatToYawPitchRoll(q) {
+    const [w,x,y,z] = q;
+    // yaw (around Z)
+    const siny_cosp = 2*(w*z + x*y);
+    const cosy_cosp = 1 - 2*(y*y + z*z);
+    let yaw = Math.atan2(siny_cosp, cosy_cosp);
+    // pitch (around Y)
+    const sinp = 2*(w*y - z*x);
+    let pitch;
+    if (Math.abs(sinp) >= 1) pitch = Math.sign(sinp) * Math.PI/2; else pitch = Math.asin(sinp);
+    // roll (around X)
+    const sinr_cosp = 2*(w*x + y*z);
+    const cosr_cosp = 1 - 2*(x*x + y*y);
+    const roll = Math.atan2(sinr_cosp, cosr_cosp);
+    return { yaw: rad2deg(yaw), pitch: rad2deg(pitch), roll: rad2deg(roll) };
+  }
+
+  // Face detect (qual face da cube está mais "à frente" considerando yaw/pitch)
+  function faceFromYawPitch(yaw, pitch) {
+    // Simplista: prioridades por ângulo
+    const y = normalizeDeg(yaw);
+    const p = clamp(pitch, -90, 90);
+    const ay = Math.abs(y);
+    if (p > 45) return 'Cima';
+    if (p < -45) return 'Baixo';
+    if (ay <= 45) return 'Frente';
+    if (ay >= 135) return 'Trás';
+    return y > 0 ? 'Direita' : 'Esquerda';
+  }
+  function normalizeDeg(a){ let d=a%360; if(d>180) d-=360; if(d<-180) d+=360; return d; }
+  function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
+
+  // ===== DOM refs
+  const el = {
+    liveDot: document.getElementById('live-dot'),
+    status: document.getElementById('status-text'),
+    world: document.getElementById('world'),
+    cube: document.getElementById('cube'),
+    btnPerm: document.getElementById('btn-permission'),
+    btnStart: document.getElementById('btn-start'),
+    btnStop: document.getElementById('btn-stop'),
+    btnCal: document.getElementById('btn-calibrate'),
+    // HUD
+    alpha: document.getElementById('alpha'),
+    beta: document.getElementById('beta'),
+    gamma: document.getElementById('gamma'),
+    abs: document.getElementById('abs'),
+    scr: document.getElementById('scr'),
+    yaw: document.getElementById('yaw'),
+    pitch: document.getElementById('pitch'),
+    roll: document.getElementById('roll'),
+    face: document.getElementById('face'),
+    // Modal
+    modal: document.getElementById('debug-modal'),
+    debugText: document.getElementById('debug-text'),
+    btnCopy: document.getElementById('btn-copy'),
+    btnCloseModal: document.getElementById('btn-close-modal'),
+  };
+
+  // ===== State
+  let running = false;
+  let rafId = 0;
+  let lastSampleTime = 0;
+  const sampleHz = 10; // 10 Hz para logs
+  const sampleInterval = 1000 / sampleHz;
+
+  let screenAngle = getScreenAngle();
+  window.addEventListener('orientationchange', () => { screenAngle = getScreenAngle(); });
   function getScreenAngle(){
-    const o = screen.orientation || screen.msOrientation;
-    return (o && typeof o.angle === "number") ? o.angle : (window.orientation || 0);
+    const o = (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : window.orientation || 0;
+    return (typeof o === 'number') ? o : 0;
   }
 
-  function getOrientationName(a) {
-    a = nrm(a);
-    if (a===0) return "Portrait (normal)";
-    if (a===180) return "Portrait (invertido)";
-    if (a===90) return "Landscape (botões à direita)";
-    if (a===270) return "Landscape (botões à esquerda)";
-    return `Desconhecido (${a}°)`;
-  }
+  // Sensor raw
+  let raw = { alpha: 0, beta: 0, gamma: 0, abs: false };
 
-  // Mapeamento corrigido:
-  // - Portrait:    pitch=beta,  roll=gamma
-  // - Portrait180: pitch=-beta, roll=-gamma
-  // - Landscape90: pitch=-beta, roll= gamma   (FIX: lateral usa gamma)
-  // - Landscape270:pitch= beta, roll=-gamma   (FIX simétrico)
-  function map(alpha, beta, gamma) {
-    const cur = nrm( lockedAngle!=null ? lockedAngle : getScreenAngle() );
-    let pitch, roll;
-    if (cur === 0) {          // Portrait
-      pitch = beta;  roll = gamma;
-    } else if (cur === 180) { // Portrait invertido
-      pitch = -beta; roll = -gamma;
-    } else if (cur === 90) {  // Landscape primary (btns à direita)
-      pitch = -beta; roll =  gamma;   // ← FIX PRINCIPAL
-    } else if (cur === 270) { // Landscape secondary
-      pitch =  beta; roll = -gamma;   // ← FIX SIMÉTRICO
-    } else {
-      pitch = beta; roll = gamma;
+  // Calibração: qCal é a orientação que definimos como "olhando para frente" (identidade após ajuste)
+  let qCal = [1,0,0,0];
+
+  // Buffers de log
+  const logs = {
+    device: [], // dados do celular (raw)
+    interpreted: [], // dados do HTML (após calibração e correções)
+    meta: { version: '1.0', startedAt: null, endedAt: null, sampleHz }
+  };
+
+  // ===== Permissão iOS
+  async function requestPermissionIfNeeded() {
+    const any = window.DeviceOrientationEvent;
+    if (!any) return true;
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      try {
+        const resp = await DeviceOrientationEvent.requestPermission();
+        return resp === 'granted';
+      } catch (e) {
+        console.warn('Permissão negada/erro:', e);
+        return false;
+      }
     }
-    // Inversões manuais, se marcadas
-    if (invertXCb.checked) pitch = -pitch;
-    if (invertYCb.checked) roll  = -roll;
-
-    return { pitch, roll, screenAngle: cur };
+    return true; // Android/desktop
   }
 
-  function onOrientation(e){
-    lastAngles = {
-      alpha: typeof e.alpha === 'number' ? e.alpha : 0,
-      beta:  typeof e.beta  === 'number' ? e.beta  : 0,
-      gamma: typeof e.gamma === 'number' ? e.gamma : 0
-    };
-  }
+  // ===== Handlers UI
+  el.btnPerm.addEventListener('click', async () => {
+    const ok = await requestPermissionIfNeeded();
+    el.status.textContent = ok ? 'Permissão concedida.' : 'Permissão negada.';
+  });
 
-  function applyTransform(pitchDeg, rollDeg) {
-    // Limites pra evitar flip exagerado (ajuste se quiser)
-    const p = clamp(pitchDeg, -85, 85);
-    const r = clamp(rollDeg, -110, 110);
-    cube.style.transform = `rotateX(${p}deg) rotateY(${r}deg)`;
-  }
+  el.btnCal.addEventListener('click', () => {
+    // Define a orientação atual como "frente" (identidade)
+    const q = computeCurrentQuat();
+    qCal = q; // referência
+    flashStatus('Recalibrado: posição atual = frente.', 'ok');
+  });
 
-  function tick(){
-    const {alpha, beta, gamma} = lastAngles;
-    const m = map(alpha, beta, gamma);
-    const pitch = m.pitch - offsets.pitch;
-    const roll  = m.roll  - offsets.roll;
-    applyTransform(pitch, roll);
-    raf = requestAnimationFrame(tick);
+  el.btnStart.addEventListener('click', async () => {
+    const ok = await requestPermissionIfNeeded();
+    if (!ok) { flashStatus('Permissão ao sensor negada.', 'err'); return; }
+    start();
+  });
+
+  el.btnStop.addEventListener('click', () => stop(true));
+
+  el.btnCopy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(el.debugText.value);
+      flashStatus('Debug copiado para a área de transferência.', 'ok');
+    } catch (e) {
+      flashStatus('Falha ao copiar.', 'err');
+    }
+  });
+  el.btnCloseModal.addEventListener('click', () => closeModal());
+
+  function flashStatus(msg, type) {
+    el.status.textContent = msg;
+    el.liveDot.classList.remove('idle','live');
+    if (type === 'ok') el.liveDot.classList.add('live');
+    if (type === 'err') el.liveDot.classList.add('idle');
+    setTimeout(()=>{ if(running){ el.status.textContent = 'Gravando…'; } }, 1600);
   }
 
   function start(){
-    if (started) return;
-    started = true;
-
-    lockedAngle = lockOriCb.checked ? nrm(getScreenAngle()) : null;
-    logEl.textContent += `>>> Iniciado. Orientação inicial: ${getOrientationName(lockedAngle ?? getScreenAngle())}\n`;
-
-    window.addEventListener("deviceorientation", onOrientation, { passive: true });
-    raf = requestAnimationFrame(tick);
-
-    clearInterval(intervalId);
-    intervalId = setInterval(()=>{
-      const {alpha,beta,gamma} = lastAngles;
-      const m = map(alpha,beta,gamma);
-      const pitch = (m.pitch - offsets.pitch);
-      const roll  = (m.roll  - offsets.roll);
-      logEl.textContent +=
-        `t=${Date.now()%1e6}\n` +
-        `raw: α=${alpha.toFixed(1)} β=${beta.toFixed(1)} γ=${gamma.toFixed(1)}\n` +
-        `mapped: pitch=${m.pitch.toFixed(1)} roll=${m.roll.toFixed(1)} screenAngle=${m.screenAngle}\n` +
-        `offsets: pitch0=${offsets.pitch.toFixed(1)} roll0=${offsets.roll.toFixed(1)}\n` +
-        `applied: pitch=${pitch.toFixed(1)} roll=${roll.toFixed(1)}\n---\n`;
-      logEl.scrollTop = logEl.scrollHeight;
-    }, 1000);
+    if (running) return;
+    running = true;
+    logs.device.length = 0;
+    logs.interpreted.length = 0;
+    logs.meta.startedAt = new Date().toISOString();
+    logs.meta.endedAt = null;
+    lastSampleTime = performance.now();
+    el.liveDot.classList.remove('idle');
+    el.liveDot.classList.add('live');
+    el.status.textContent = 'Gravando…';
+    window.addEventListener('deviceorientation', onDeviceOrientation, { passive: true });
+    rafId = requestAnimationFrame(tick);
   }
 
-  function stop(){
-    if (!started) return;
-    started = false;
-    cancelAnimationFrame(raf);
-    clearInterval(intervalId);
-    window.removeEventListener("deviceorientation", onOrientation);
-    logEl.textContent += ">>> Parado\n";
+  function stop(openReport){
+    if (!running) return;
+    running = false;
+    logs.meta.endedAt = new Date().toISOString();
+    window.removeEventListener('deviceorientation', onDeviceOrientation);
+    cancelAnimationFrame(rafId);
+    el.liveDot.classList.remove('live');
+    el.liveDot.classList.add('idle');
+    el.status.textContent = 'Parado.';
+    if (openReport) openModal();
   }
 
-  function calibrate(){
-    const {alpha,beta,gamma} = lastAngles;
-    const m = map(alpha,beta,gamma);
-    offsets.pitch = m.pitch;
-    offsets.roll  = m.roll;
-    logEl.textContent += ">>> Calibrado\n";
+  function onDeviceOrientation(e){
+    // Alguns browsers podem fornecer null; proteja
+    raw.alpha = (typeof e.alpha === 'number') ? e.alpha : raw.alpha;
+    raw.beta  = (typeof e.beta  === 'number') ? e.beta  : raw.beta;
+    raw.gamma = (typeof e.gamma === 'number') ? e.gamma : raw.gamma;
+    raw.abs   = !!e.absolute;
   }
 
-  btnStart.addEventListener("click", start);
-  btnStop.addEventListener("click", stop);
-  btnCal.addEventListener("click", calibrate);
+  function computeCurrentQuat(){
+    const qEuler = eulerZXYToQuat(raw.alpha, raw.beta, raw.gamma);
+    const qScreen = applyScreenQuat(qEuler, screenAngle);
+    return qScreen;
+  }
 
-  // Opcional: avisar se a orientação do SO mudar (não re-mapeia se travado)
-  window.addEventListener("orientationchange", () => {
-    const a = getScreenAngle();
-    logEl.textContent += `>>> orientationchange → ${getOrientationName(a)}\n`;
-  }, { passive: true });
+  function getCalibratedQuat(){
+    // qRel = inv(qCal) * qCurrent
+    const qCurrent = computeCurrentQuat();
+    return quatMultiply(quatConjugate(qCal), qCurrent);
+  }
+
+  function tick(ts){
+    // Atualiza HUD e mundo 60fps
+    const qRel = getCalibratedQuat();
+    const ypr = quatToYawPitchRoll(qRel);
+
+    // Rotaciona o MUNDO ao redor do usuário (efeito 1ª pessoa)
+    el.world.style.transform = `rotateZ(${-ypr.yaw}deg) rotateX(${-ypr.pitch}deg) rotateY(${ypr.roll}deg)`;
+
+    // HUD instantâneo
+    el.alpha.textContent = raw.alpha.toFixed(1);
+    el.beta.textContent  = raw.beta.toFixed(1);
+    el.gamma.textContent = raw.gamma.toFixed(1);
+    el.abs.textContent   = String(raw.abs);
+    el.scr.textContent   = String(screenAngle);
+
+    el.yaw.textContent   = ypr.yaw.toFixed(1);
+    el.pitch.textContent = ypr.pitch.toFixed(1);
+    el.roll.textContent  = ypr.roll.toFixed(1);
+    const face = faceFromYawPitch(ypr.yaw, ypr.pitch);
+    el.face.textContent  = face;
+
+    // Log periódico (10 Hz)
+    if (running && (ts - lastSampleTime) >= sampleInterval) {
+      lastSampleTime = ts;
+      const stamp = Date.now();
+      logs.device.push({ t: stamp, alpha: raw.alpha, beta: raw.beta, gamma: raw.gamma, absolute: raw.abs, screenAngle });
+      logs.interpreted.push({ t: stamp, yaw: ypr.yaw, pitch: ypr.pitch, roll: ypr.roll, face });
+    }
+
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function openModal(){
+    const payload = {
+      meta: logs.meta,
+      device: logs.device,
+      interpreted: logs.interpreted,
+    };
+    el.debugText.value = JSON.stringify(payload, null, 2);
+    el.modal.classList.add('open');
+  }
+  function closeModal(){ el.modal.classList.remove('open'); }
+
+  // Estado inicial
+  el.liveDot.classList.add('idle');
+  el.status.textContent = 'Aguardando…';
 })();
 </script>
 </body>

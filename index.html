@@ -132,16 +132,16 @@
       // === Luz e geometria básica ===
       // Luz ambiente suave para a sala escura
       const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
-      hemi.intensity = 0.35;
+      hemi.intensity = 1;
 
       // Uma luz pontual fraca acima da câmera para dar contraste
       const point = new BABYLON.PointLight('point', new BABYLON.Vector3(0, 2.5, 1.5), scene);
-      point.intensity = 0.5;
+      point.intensity = 1.2;
 
       // Sala: caixa invertida para olharmos de dentro (10m)
       const room = BABYLON.MeshBuilder.CreateBox('room', { size: 10, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
       const roomMat = new BABYLON.StandardMaterial('roomMat', scene);
-      roomMat.diffuseColor = new BABYLON.Color3(0.05, 0.06, 0.08); // quase preta
+      roomMat.diffuseColor = new BABYLON.Color3(0.12, 0.14, 0.18); // quase preta
       roomMat.specularColor = new BABYLON.Color3(0, 0, 0);
       room.material = roomMat;
 
@@ -151,7 +151,7 @@
       const refMat = new BABYLON.StandardMaterial('refMat', scene);
       refMat.diffuseColor = new BABYLON.Color3(0.25, 0.25, 0.28);
       refMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
-      refMat.emissiveColor = new BABYLON.Color3(0.01, 0.01, 0.015); // levemente visível na escuridão
+      refMat.emissiveColor = new BABYLON.Color3(0.08, 0.08, 0.10); // levemente visível na escuridão
       try {
         refMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/rock.png', scene);
       } catch (e) { /* se falhar, fica só a cor difusa */ }
@@ -177,3 +177,4 @@
   </script>
 </body>
 </html>
+

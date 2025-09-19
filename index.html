@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#000000" />
-  <title>FPS 3D — Protótipo (Menu + HUD + Gyro + Corda + Balance + Fog)</title>
+  <title>FPS 3D — Protótipo (Menu + HUD + Gyro + Corda + Balance)</title>
   <style>
     :root{ --navy:#0b2a6b; --navy2:#001021; --fg:#e6ebf5; }
     html,body{ height:100%; margin:0; background:#000; color:var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
@@ -139,6 +139,7 @@
     const restart  = document.getElementById('restart');
     const needle = document.querySelector('#balanceMeter .needle');
 
+    // Detecção simples de mobile
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && screen.width < 1025);
 
     const engine = new BABYLON.Engine(canvas, true);
@@ -197,19 +198,8 @@
     }
     beam.material = metalMat;
 
-    // ===== Névoa no fundo =====
-    const fogPlane = BABYLON.MeshBuilder.CreateGround("fogPlane", {width: 200, height: 200}, scene);
-    fogPlane.position.y = -20;
-    fogPlane.material = new BABYLON.StandardMaterial("fogMat", scene);
-    fogPlane.material.diffuseTexture = new BABYLON.Texture("https://playground.babylonjs.com/textures/cloud.png", scene);
-    fogPlane.material.diffuseTexture.hasAlpha = true;
-    fogPlane.material.opacityTexture = fogPlane.material.diffuseTexture;
-    fogPlane.material.emissiveColor = new BABYLON.Color3(0.9, 0.3, 0.1); // laranja-avermelhado
-    fogPlane.material.backFaceCulling = false;
-    fogPlane.material.alpha = 0.8;
-    scene.registerBeforeRender(() => {
-      fogPlane.material.diffuseTexture.uOffset += 0.0005;
-    });
+    engine.runRenderLoop(() => scene.render());
+    window.addEventListener('resize', () => engine.resize());
 
     // ===== HUD: orientação
     function refreshOrientationBadge(){
@@ -317,7 +307,7 @@
           const e = camera.rotationQuaternion.toEulerAngles();
           const phoneRoll = e.z;
           const norm = Math.max(-1, Math.min(1, phoneRoll / MAX_ROLL_FOR_INPUT));
-          userInput = norm;
+          userInput = norm; // não invertido
         }
         const effective = userInput / (1 + K_RESIST * Math.abs(angle));
 
@@ -373,3 +363,5 @@
   </script>
 </body>
 </html>
+
+

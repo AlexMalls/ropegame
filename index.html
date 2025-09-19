@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#000000" />
-  <title>FPS 3D — Protótipo (Menu + HUD + Gyro + Corda + Balance) • Cardboard</title>
+  <title>FPS 3D — Protótipo (Menu + HUD + Gyro + Corda + Balance)</title>
   <style>
     :root{ --navy:#0b2a6b; --navy2:#001021; --fg:#e6ebf5; }
     html,body{ height:100%; margin:0; background:#000; color:var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
-    body{ height:100dvh; overscroll-behavior: none; }
+    body{ height:100dvh; }
     canvas{ width:100vw; height:100dvh; display:block; touch-action:none; }
 
     /* ===== Overlay base ===== */
@@ -66,12 +66,6 @@
       transform:translate(-50%, -50%); border-radius:2px; opacity:.85; }
     .meter .needle { position:absolute; top:50%; left:50%; width:8px; height:70%; background:var(--fg);
       border-radius:3px; transform:translate(-50%, -50%); transition:left 0.05s linear; }
-
-    /* Pequenina dica flutuante para VR */
-    #hint { position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%); z-index: 2;
-      font-size: 12px; opacity: .6; background: rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.08);
-      padding: 6px 8px; border-radius: 10px; pointer-events: none; }
-    .hide{ display:none !important; }
   </style>
 
   <!-- Babylon Core -->
@@ -89,9 +83,8 @@
       <p>Pronto para mobile e desktop. Em celulares, o <b>giroscópio</b> liga automaticamente.</p>
       <div class="actions">
         <button id="play" class="btn" aria-label="Jogar">Jogar</button>
+        <!-- ⭐ Novo botão: Free Cam -->
         <button id="freecam" class="btn" aria-label="Modo Free Cam">Free Cam</button>
-        <!-- ⭐ Novo: Cardboard VR -->
-        <button id="cardboard" class="btn" aria-label="Entrar no Cardboard VR">Cardboard VR</button>
       </div>
     </div>
   </div>
@@ -124,43 +117,26 @@
     </div>
   </div>
 
-  <div id="hint" class="hide">Duplo toque para recentrar • Teclado: R</div>
-
   <script>
   (function(){
     const canvas = document.getElementById('game');
     const menu   = document.getElementById('menu');
     const play   = document.getElementById('play');
-    const freeBtn= document.getElementById('freecam');
-    const cardBtn= document.getElementById('cardboard'); // ⭐
+    const freeBtn= document.getElementById('freecam'); // ⭐
     const hud    = document.getElementById('hud');
     const orientBadge = document.getElementById('orientBadge');
     const gameover = document.getElementById('gameover');
     const restart  = document.getElementById('restart');
     const needle = document.querySelector('#balanceMeter .needle');
-    const meter  = document.getElementById('balanceMeter');
-    const hint   = document.getElementById('hint');
+    const meter  = document.getElementById('balanceMeter'); // ⭐
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && screen.width < 1025);
-
-    // ⭐ Estado VR/Cardboard
-    let isCardboard = false;          // estamos em modo Cardboard (stereo side-by-side)
-    let wakeLock = null;              // bloqueio de tela
-    async function keepAwake(on){
-      try{
-        if (on && 'wakeLock' in navigator){ wakeLock = await navigator.wakeLock.request('screen'); }
-        if (!on && wakeLock){ await wakeLock.release(); wakeLock = null; }
-      }catch(_){}
-    }
-    async function lockLandscape(){
-      try{ await screen.orientation.lock('landscape'); } catch(_){}
-    }
 
     // ⭐ Guardaremos aqui a Y da lava para calibrar a altura dos blocões
     let LAVA_Y = null;
 
-    // Engine
-    const engine = new BABYLON.Engine(canvas, true, { stencil:false, preserveDrawingBuffer:true });
+    // Engine (mantém otimizações)
+    const engine = new BABYLON.Engine(canvas, true, { stencil:false });
     engine.setHardwareScalingLevel(isMobile ? 1.25 : 1.0);
 
     const scene = new BABYLON.Scene(engine);
@@ -175,14 +151,15 @@
 
     // ===== Limite de visão suave (Fog linear + vinheta) =====
     scene.fogMode  = BABYLON.Scene.FOGMODE_LINEAR;
-    scene.fogColor = new BABYLON.Color3(0.0, 0.0, 0.0);
-    scene.fogStart = 16;
-    scene.fogEnd   = 120;
+    scene.fogColor = new BABYLON.Color3(0.0, 0.0, 0.0); // escurece para preto
+    scene.fogStart = 16;    // começa a escurecer a ~6 unidades da câmera
+    scene.fogEnd   = 120;   // escuro total por volta de 80 (ajuste aqui)
 
+    // Vinheta global sutil para reforçar a “muralha de escuridão”
     scene.imageProcessingConfiguration.vignetteEnabled = true;
     scene.imageProcessingConfiguration.vignetteColor   = new BABYLON.Color4(0,0,0,1);
-    scene.imageProcessingConfiguration.vignetteWeight  = 1.2;
-    scene.imageProcessingConfiguration.vignetteStretch = 0.0;
+    scene.imageProcessingConfiguration.vignetteWeight  = 1.2; // 1.0–2.0
+    scene.imageProcessingConfiguration.vignetteStretch = 0.0; // 0 = circular
 
     // ===== Cena base =====
     let camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 1.2, 38), scene);
@@ -190,7 +167,7 @@
     camera.speed = 0;
     camera.keysUp = camera.keysDown = camera.keysLeft = camera.keysRight = [];
     camera.minZ = 0.1;
-    camera.maxZ = 1000; // a fog limita a visão
+    camera.maxZ = 1000; // alto para evitar corte — a fog limita a visão de forma suave
 
     // Nó do "corpo" do jogador
     const rig = new BABYLON.TransformNode('playerRig', scene);
@@ -198,10 +175,12 @@
     camera.parent = rig;
     camera.position.set(0,0,0);
 
-    const PIVOT_DOWN = 0.6;
+    // 🔧 Pivô abaixo da câmera (faz o corpo deslocar quando inclina)
+    const PIVOT_DOWN = 0.6; // ajuste fino: 0.4–0.9
     rig.setPivotPoint(new BABYLON.Vector3(0, -PIVOT_DOWN, 0));
 
     const light = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0,1,0), scene);
+    // Iluminação global amarelada
     light.diffuse = new BABYLON.Color3(1.0, 0.75, 0.35);
     light.specular = new BABYLON.Color3(1.0, 0.6, 0.2);
     light.groundColor = new BABYLON.Color3(0.4, 0.25, 0.1);
@@ -217,7 +196,7 @@
     cube.freezeWorldMatrix();
 
     // ===== Viga =====
-    const beamY = -0.7;
+    const beamY = -0.7;     // <- como você deixou
     const endOffsetY = -0.7;
     const beamStart = new BABYLON.Vector3(rig.position.x, beamY, rig.position.z);
     const beamEnd   = new BABYLON.Vector3(cube.position.x, beamY + endOffsetY, cube.position.z);
@@ -246,13 +225,15 @@
 
     // ======== NÉVOA / LAVA / PARTÍCULAS ========
     (function makeLayeredGroundFog(){
-      const roomWidth  = 350;
-      const roomDepth  = 105;
+      // --- Controle separado de largura/profundidade da área de efeitos ---
+      const roomWidth  = 350; // largura X (lateral)
+      const roomDepth  = 105; // profundidade Z (frente/trás)
       const margin     = 6;
 
-      const planeWidth  = roomWidth  - margin*2;
-      const planeHeight = roomDepth  - margin*2;
+      const planeWidth  = roomWidth  - margin*2;  // usado em névoa/lava (X)
+      const planeHeight = roomDepth  - margin*2;  // usado em névoa/lava (Z)
 
+      // Base do "chão" da sala (para posicionar névoa e lava)
       const floorY   = -40;
 
       const height = 5;
@@ -265,6 +246,7 @@
         const t = i/(slices-1);
         const y = floorY + 12 + t*height;
 
+        // Plano retangular (X = width, Z = height do plane)
         const p = BABYLON.MeshBuilder.CreatePlane(`fogSlice${i}`, { width: planeWidth, height: planeHeight }, scene);
         p.position = new BABYLON.Vector3(0, y, 0);
         p.rotation.x = Math.PI/2;
@@ -285,8 +267,9 @@
         m.alpha = baseAlpha * (2.0 - Math.pow(t, 1.35));
         m.alphaMode = BABYLON.Engine.ALPHA_COMBINE;
 
-        m.fogEnabled = true;
-        p.applyFog   = true;
+        /* FOG-FIX: garantir que o material e o mesh participem do fog da cena */
+        m.fogEnabled = true;   // StandardMaterial respeita scene.fog
+        p.applyFog   = true;   // mesh não opta por sair do fog
 
         p.material = m;
 
@@ -305,12 +288,15 @@
         fogSlices.push({mat:m, speedU: speedU*dirU, speedV: speedV*dirV});
       }
 
+      /* FOG-FIX: GlowLayer por padrão ignora fog; excluímos as fatias para não “furarem” a névoa de distância */
       const glow = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 10, mainTextureRatio: 0.5 });
       glow.intensity = 0.5;
       for (let i=0;i<slices;i++){
         const fs = scene.getMeshByName(`fogSlice${i}`);
         if (fs) glow.addExcludedMesh(fs);
       }
+      // (Opcional) Se quiser, pode incluir apenas a lava:
+      // glow.addIncludedOnlyMesh(scene.getMeshByName("lava"));
 
       (function makeLava(){
         const lava = BABYLON.MeshBuilder.CreateGround("lava", {
@@ -334,31 +320,73 @@
         lavaMat.alpha = 1.0;
         lavaMat.alphaMode = BABYLON.Engine.ALPHA_DISABLE;
         lavaMat.disableDepthWrite = false;
-        lavaMat.fogEnabled = true;
+
+        /* FOG-FIX: tentativa amigável — se o material suportar fogEnabled, mantemos true */
+        lavaMat.fogEnabled = true; // se não existir, não quebra nada no JS
 
         lava.material = lavaMat;
 
+        // 🔄 Animação da textura da lava (fluindo para a direita)
         scene.onBeforeRenderObservable.add(() => {
           const dt = engine.getDeltaTime() / 1000;
-          const speed = 0.009;
-          if (lavaMat && lavaMat.diffuseTexture) lavaMat.diffuseTexture.uOffset += speed * dt;
-          if (lavaMat && lavaMat.noiseTexture)   lavaMat.noiseTexture.uOffset += (speed * 0.5) * dt;
+          const speed = 0.009; // ajuste a velocidade
+
+          if (lavaMat && lavaMat.diffuseTexture) {
+            lavaMat.diffuseTexture.uOffset += speed * dt;
+          }
+          if (lavaMat && lavaMat.noiseTexture) {
+            lavaMat.noiseTexture.uOffset += (speed * 0.5) * dt; // noise anda mais devagar
+          }
         });
 
+        // 💡 LUZES DA LAVA (iluminação de baixo pra cima)
         (function addLavaLights(){
           const lavaColor = new BABYLON.Color3(1.0, 0.45, 0.12);
-          const spot = new BABYLON.SpotLight("lavaSpot", new BABYLON.Vector3(0, LAVA_Y + 0.5, 0), new BABYLON.Vector3(0, 1, 0), Math.PI * 0.95, 10, scene);
-          spot.diffuse = lavaColor; spot.specular = lavaColor.scale(0.2); spot.intensity = 3; spot.range = 140;
 
-          const fillIntensity = 1.3, fillRange = 90;
-          const fill1 = new BABYLON.PointLight("lavaFillStart", new BABYLON.Vector3(beamStart.x, LAVA_Y + 0.8, beamStart.z), scene);
-          fill1.diffuse = lavaColor; fill1.specular = lavaColor.scale(0.15); fill1.intensity = fillIntensity; fill1.range = fillRange;
+          // Spotlight central (banho geral de baixo pra cima)
+          const spot = new BABYLON.SpotLight(
+            "lavaSpot",
+            new BABYLON.Vector3(0, LAVA_Y + 0.5, 0),
+            new BABYLON.Vector3(0, 1, 0),
+            Math.PI * 0.95,
+            10,
+            scene
+          );
+          spot.diffuse = lavaColor;
+          spot.specular = lavaColor.scale(0.2);
+          spot.intensity = 3;
+          spot.range = 140;
 
-          const fill2 = new BABYLON.PointLight("lavaFillEnd", new BABYLON.Vector3(beamEnd.x, LAVA_Y + 0.8, beamEnd.z), scene);
-          fill2.diffuse = lavaColor; fill2.specular = lavaColor.scale(0.15); fill2.intensity = fillIntensity; fill2.range = fillRange;
+          // Fills nas pontas (realçar paredões)
+          const fillIntensity = 1.3;
+          const fillRange = 90;
 
+          const fill1 = new BABYLON.PointLight(
+            "lavaFillStart",
+            new BABYLON.Vector3(beamStart.x, LAVA_Y + 0.8, beamStart.z),
+            scene
+          );
+          fill1.diffuse = lavaColor;
+          fill1.specular = lavaColor.scale(0.15);
+          fill1.intensity = fillIntensity;
+          fill1.range = fillRange;
+
+          const fill2 = new BABYLON.PointLight(
+            "lavaFillEnd",
+            new BABYLON.Vector3(beamEnd.x, LAVA_Y + 0.8, beamEnd.z),
+            scene
+          );
+          fill2.diffuse = lavaColor;
+          fill2.specular = lavaColor.scale(0.15);
+          fill2.intensity = fillIntensity;
+          fill2.range = fillRange;
+
+          // Hemispheric invertida para "ar quente" do chão
           const hemi = new BABYLON.HemisphericLight("lavaHemi", new BABYLON.Vector3(0, -1, 0), scene);
-          hemi.diffuse = lavaColor.scale(0.25); hemi.specular = new BABYLON.Color3(0,0,0); hemi.groundColor = lavaColor.scale(0.55); hemi.intensity = 0.55;
+          hemi.diffuse = lavaColor.scale(0.25);
+          hemi.specular = new BABYLON.Color3(0,0,0);
+          hemi.groundColor = lavaColor.scale(0.55);
+          hemi.intensity = 0.55;
         })();
       })();
 
@@ -371,6 +399,7 @@
         ps.particleTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
         ps.emitter = new BABYLON.Vector3(0, floorY + 13, 0);
 
+        // Caixa de emissão retangular (segue planeWidth/planeHeight)
         const halfX = planeWidth  * 0.5;
         const halfZ = planeHeight * 0.5;
         ps.minEmitBox = new BABYLON.Vector3(-halfX, 0, -halfZ);
@@ -394,12 +423,16 @@
 
         ps.updateSpeed = 0.010;
         ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+
         ps.renderingGroupId = 3;
 
+        /* FOG-FIX: partículas passam a respeitar o fog da cena */
         ps.applyFog = true;
+
         ps.start();
       })();
 
+      // animação da névoa (brisa)
       let acc = 0, step = 1/60;
       scene.onBeforeRenderObservable.add(()=>{
         const dt = engine.getDeltaTime()/1000;
@@ -415,12 +448,23 @@
     })();
     // ======== FIM NÉVOA/LAVA ========
 
-    // ⭐ Blocos da viga
+    // ⭐ Blocos de início/fim da viga até a lava (textura repetida e escurecida)
     (function makeEndBlocks(){
-      const cfg = { along: 10, side: 350, bottomExtra: 2, tilesPerUnit: 1, darkenLevel: 0.6 };
+      // Config fácil de ajustar:
+      const cfg = {
+        along: 10,       // espessura ao longo da viga (Z após alinhar)
+        side: 350,       // largura perpendicular à viga (X após alinhar)
+        bottomExtra: 2,  // penetra levemente a lava para evitar flicker
+        tilesPerUnit: 1, // densidade de repetição do piso
+        darkenLevel: 0.6 // 1.0 = original; <1 = mais escuro
+      };
+
+      // Direção normalizada da viga (do início ao fim)
       const dir = beamDir.clone().normalize();
+      // Rotação que alinha o eixo Z+ do box com a direção da viga
       const q = BABYLON.Quaternion.FromLookDirectionLH(dir, BABYLON.Axis.Y);
 
+      // Cria material de piso com repetição e escurecimento
       function makeFloorMat(name, uTiles, vTiles){
         const m = new BABYLON.StandardMaterial(name, scene);
         const tex = new BABYLON.Texture("https://playground.babylonjs.com/textures/floor.png", scene);
@@ -428,24 +472,38 @@
         tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
         tex.uScale = Math.max(1, Math.round(uTiles));
         tex.vScale = Math.max(1, Math.round(vTiles));
-        tex.level  = cfg.darkenLevel;
+        tex.level  = cfg.darkenLevel; // escurece a textura
         m.diffuseTexture = tex;
         m.specularColor = new BABYLON.Color3(0,0,0);
         return m;
       }
+
       function makeEndBlock(name, endPoint, dirSign){
+        // top do bloco encosta na viga naquela ponta
         const topY = endPoint.y;
         const bottomY = (LAVA_Y ?? -35) - cfg.bottomExtra;
         const height = topY - bottomY;
         const centerY = bottomY + height * 0.5;
 
-        const box = BABYLON.MeshBuilder.CreateBox(name, { width: cfg.side, height, depth: cfg.along }, scene);
+        // Caixa alinhada à viga:
+        // width (X) = "lado a lado" / side ; depth (Z) = "espessura" ao longo da viga
+        const box = BABYLON.MeshBuilder.CreateBox(name, {
+          width:  cfg.side,   // largo para virar “paredão”
+          height: height,     // da viga até a lava
+          depth:  cfg.along   // fino ao longo da viga (parede)
+        }, scene);
+
         box.rotationQuaternion = q.clone();
+
+        // desloca metade da espessura para fora, deixando a face do bloco
+        // encostada na ponta da viga
         const offset = dir.scale((cfg.along * 0.5) * dirSign);
         box.position = new BABYLON.Vector3(endPoint.x, centerY, endPoint.z).addInPlace(offset);
 
-        const uTiles = cfg.side * cfg.tilesPerUnit;
-        const vTiles = height   * cfg.tilesPerUnit;
+        // Repetição da textura:
+        // U (largura) acompanha X; V (altura) acompanha Y
+        const uTiles = cfg.side   * cfg.tilesPerUnit;
+        const vTiles = height     * cfg.tilesPerUnit;
         box.material = makeFloorMat(name + "Mat", uTiles, vTiles);
 
         box.isPickable = false;
@@ -453,11 +511,16 @@
         box.freezeWorldMatrix();
         return box;
       }
-      makeEndBlock("startBlock", beamStart, -1);
-      makeEndBlock("endBlock",   beamEnd,    +1);
+
+      // Cria os dois blocões — um em cada ponta
+      const startBlock = makeEndBlock("startBlock", beamStart, -1);
+      const endBlock   = makeEndBlock("endBlock",   beamEnd,    +1);
+
+      // window._endBlocks = { startBlock, endBlock };
     })();
 
     // ======= LOOP E INPUTS =======
+    // Estado e inputs do jogo
     let gameState = 'menu';
     let angle = 0, omega = 0;
     const K_GRAV = 1.6, K_DAMP = 1.1, K_INPUT = 2.5, K_RESIST = 0.7;
@@ -470,7 +533,6 @@
     let keyTarget = 0, keyInput = 0;
     window.addEventListener('keydown', (e)=>{
       if (e.code === 'KeyA') keyTarget = 1; else if (e.code === 'KeyD') keyTarget = -1;
-      if (e.code === 'KeyR') recenterYaw(); // ⭐ recentra
     });
     window.addEventListener('keyup', (e)=>{
       if ((e.code === 'KeyA' && keyTarget === 1) || (e.code === 'KeyD' && keyTarget === -1)) keyTarget = 0;
@@ -483,7 +545,7 @@
       if (e.code === 'KeyE' || e.code === 'Space') freeUp = 1;
       if (e.code === 'KeyQ' || e.code === 'ControlLeft' || e.code === 'ControlRight') freeDown = 1;
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') freeSprint = 1;
-      if (e.code === 'Escape'){
+      if (e.code === 'Escape'){ // voltar ao menu
         document.exitPointerLock?.();
         menu.classList.remove('hide');
         hud.setAttribute('aria-hidden','true');
@@ -497,11 +559,10 @@
     window.addEventListener('keydown', onFreeKeyDown);
     window.addEventListener('keyup', onFreeKeyUp);
 
-    function updateMeter(angleVal){
+    function updateMeter(angle){
       const max = FALL_LIMIT;
-      const percent = (angleVal / max) * 50;
-      if (needle) needle.style.left = `calc(50% + ${percent}%)`;
-      // (Se quiser, dá pra espelhar em HUD 3D depois)
+      const percent = (angle / max) * 50;
+      needle.style.left = `calc(50% + ${percent}%)`;
     }
 
     engine.runRenderLoop(()=>{
@@ -510,18 +571,17 @@
       if (gameState === 'running'){
         keyInput += (keyTarget - keyInput) * Math.min(1, dt*8);
 
-        // input da cabeça — usa roll
+        // input vem da cabeça (câmera) — corrige o corpo aos poucos via dinâmica
         let userInput = keyInput;
-        const hasQ = camera && camera.rotationQuaternion;
-        if ((isMobile || isCardboard) && hasQ){
+        if (isMobile && camera.rotationQuaternion){
           const e = camera.rotationQuaternion.toEulerAngles();
-          const phoneRoll = e.z;
+          const phoneRoll = e.z; // roll da cabeça
           const norm = Math.max(-1, Math.min(1, phoneRoll / MAX_ROLL_FOR_INPUT));
           userInput = norm;
         }
         const effective = userInput / (1 + K_RESIST * Math.abs(angle));
 
-        // dinâmica
+        // dinâmica do corpo (rig) — inclina em torno do pivô (abaixo), causando deslocamento lateral
         const acc = K_GRAV * Math.sin(angle) - K_DAMP * omega - K_INPUT * effective;
         omega += acc * dt;
         angle += omega * dt;
@@ -542,9 +602,10 @@
           rig.position.addInPlace(toCube.scale(SPEED * dt));
         }
       } else if (gameState === 'freecam'){
+        // Movimento vertical e sprint
         const fc = camera;
         if (fc){
-          fc.speed = freeSprint ? 7.0 : 3.0;
+          fc.speed = freeSprint ? 7.0 : 3.0; // velocidade WASD
           const dy = (freeUp - freeDown) * fc.speed * dt * 3.0;
           fc.position.y += dy;
         }
@@ -566,8 +627,7 @@
     refreshOrientationBadge();
     window.matchMedia('(orientation: landscape)').addEventListener?.('change', refreshOrientationBadge);
 
-    // ===== Giroscópio
-    // ⭐ Regra do projeto: yaw inicial +90° (PI/2) SOMENTE em mobile ao habilitar o giro; desktop não.
+    // ===== Giroscópio (só na câmera/cabeça)
     let yawOffset = (isMobile ? Math.PI / 2 : 0), pitchOffset = 0, rollOffset = 0;
 
     async function requestMotionPermission(){
@@ -582,18 +642,16 @@
       return true;
     }
 
-    function swapToDeviceOrientationCamera(fovOverride){
-      const fov = (typeof fovOverride === 'number') ? fovOverride : (camera.fov ?? 0.8);
-      const minZ = camera.minZ ?? 0.1, maxZ = camera.maxZ ?? 1000;
-      if (camera){ camera.detachControl(canvas); }
-      camera.dispose?.();
-
+    function swapToDeviceOrientationCamera(){
+      const fov = camera.fov ?? 0.8, minZ = camera.minZ ?? 0.1, maxZ = camera.maxZ ?? 1000;
+      // Descarta a câmera atual e cria a de device orientation como "cabeça" do jogador
+      if (camera){ camera.detachControl(canvas); camera.dispose?.(); }
       const devcam = new BABYLON.DeviceOrientationCamera('devcam', BABYLON.Vector3.Zero(), scene);
       devcam.fov = fov; devcam.minZ = minZ; devcam.maxZ = maxZ;
       devcam.attachControl(canvas, true);
       devcam._disablePointerInputWhenUsingDeviceOrientation = false;
-      devcam.parent = rig;
-      devcam.position.set(0,0,0);
+      devcam.parent = rig;            // continua filho do corpo (rig)
+      devcam.position.set(0,0,0);     // gira a cabeça, não o corpo
 
       scene.activeCamera = devcam;
       camera = devcam;
@@ -610,16 +668,18 @@
     function swapToFreeCamera(){
       const startPos = new BABYLON.Vector3(0, 2.2, 45);
       const fov = camera.fov ?? 0.8;
+      // Descarta a câmera atual e cria uma FreeCamera independente do rig
       if (camera){ camera.detachControl(canvas); camera.parent = null; camera.dispose?.(); }
       const fc = new BABYLON.FreeCamera('freecam', startPos, scene);
-      fc.fov = fov; fc.minZ = 0.1; fc.maxZ = 1000;
+      fc.fov = fov; fc.minZ = 0.1; fc.maxZ = 1000; // alto; fog controla o alcance
       fc.rotation = new BABYLON.Vector3(0, 0, 0);
       fc.setTarget(beamMid);
 
-      fc.keysUp    = [87,38];
-      fc.keysDown  = [83,40];
-      fc.keysLeft  = [65,37];
-      fc.keysRight = [68,39];
+      // Mapeia WASD + setas
+      fc.keysUp    = [87,38]; // W, ↑
+      fc.keysDown  = [83,40]; // S, ↓
+      fc.keysLeft  = [65,37]; // A, ←
+      fc.keysRight = [68,39]; // D, →
       fc.speed = 3.0;
       fc.inertia = 0.8;
       fc.angularSensibility = 1300;
@@ -632,22 +692,6 @@
     async function enableGyroAuto(){
       const ok = await requestMotionPermission(); if (!ok) return;
       swapToDeviceOrientationCamera();
-    }
-
-    // ===== Recentrar yaw (duplo toque / tecla R)
-    let lastTap = 0;
-    canvas.addEventListener('touchend', ()=>{
-      const now = performance.now();
-      if (now - lastTap < 350){ recenterYaw(); }
-      lastTap = now;
-    }, { passive:true });
-    function recenterYaw(){
-      const q = camera.rotationQuaternion;
-      if (!q) return;
-      // extrai yaw atual e ajusta offset para zerá-lo
-      const e = q.toEulerAngles();
-      // Queremos que o heading atual vire 0 → offset oposto
-      yawOffset = (isCardboard ? 0 : (isMobile ? Math.PI/2 : 0)) - e.y;
     }
 
     // ===== UI AÇÕES =====
@@ -678,17 +722,13 @@
       gameState = 'gameover';
       hud.setAttribute('aria-hidden','true');
       gameover.classList.remove('hide');
-      hint.classList.add('hide');
-      // sai de Cardboard automaticamente
-      if (isCardboard) exitCardboardMode();
     }
 
     restart.addEventListener('click', () => {
       gameover.classList.add('hide');
       hud.setAttribute('aria-hidden','false');
       meter.style.display = ''; // volta a régua
-      hint.classList.add('hide');
-
+      // volta pro ponto inicial
       rig.position.copyFrom(new BABYLON.Vector3(0, 1.2, 38));
       rig.rotation.set(0,0,0);
       angle = 0; omega = 0;
@@ -699,81 +739,27 @@
     });
 
     play.addEventListener('click', async () => {
-      isCardboard = false;
       menu.classList.add('hide');
       hud.setAttribute('aria-hidden','false');
-      meter.style.display = '';
-      hint.classList.add('hide');
+      meter.style.display = ''; // mostra régua
       if (isMobile) { await enableGyroAuto(); } else { canvas.requestPointerLock?.(); swapToDeviceOrientationCamera(); }
       setTimeout(() => engine.resize(), 0);
       startCountdownThenRun();
     }, { passive:true });
 
-    // Free Cam
+    // ⭐ Ativa Free Cam
     freeBtn.addEventListener('click', () => {
-      isCardboard = false;
       menu.classList.add('hide');
-      hud.setAttribute('aria-hidden','true');
-      meter.style.display = 'none';
-      hint.classList.add('hide');
+      hud.setAttribute('aria-hidden','true'); // oculta HUD no freecam
+      meter.style.display = 'none';           // garante que a régua não apareça
       gameState = 'freecam';
       swapToFreeCamera();
       if (!isMobile) canvas.requestPointerLock?.();
       setTimeout(() => engine.resize(), 0);
     }, { passive:true });
 
-    // ======= CARDHBOARD (stereo side-by-side) =======
-    cardBtn.addEventListener('click', async () => {
-      await enterCardboardMode();
-    }, { passive:true });
-
-    async function enterCardboardMode(){
-      isCardboard = true;
-      menu.classList.add('hide');
-      hud.setAttribute('aria-hidden','false');   // mantém a régua na tela (funciona bem em Cardboard)
-      meter.style.display = '';
-      hint.classList.remove('hide');
-
-      await keepAwake(true);
-      await lockLandscape();
-
-      // Em Cardboard, vamos usar DeviceOrientation + estéreo side-by-side
-      const ok = await requestMotionPermission(); if (!ok){ return; }
-
-      // **FOV maior** para VR mobile
-      swapToDeviceOrientationCamera(1.1);
-
-      // ⭐ Ativa rig de câmera estereoscópica lado a lado
-      try{
-        camera.setCameraRigMode(BABYLON.Camera.RIG_MODE_STEREOSCOPIC_SIDEBYSIDE_PARALLEL, { interaxialDistance: 0.064 });
-      }catch(e){
-        // fallback: alguns builds usam constante com outro nome (compat)
-        if (BABYLON.Camera.RIG_MODE_STEREOSCOPIC_SIDEBYSIDE_PARALLEL === undefined && BABYLON.Camera.RIG_MODE_STEREOSCOPIC_SIDE_BY_SIDE_PARALLEL !== undefined){
-          camera.setCameraRigMode(BABYLON.Camera.RIG_MODE_STEREOSCOPIC_SIDE_BY_SIDE_PARALLEL, { interaxialDistance: 0.064 });
-        }
-      }
-
-      // Em Cardboard, não somamos yaw +90° automaticamente após recentrar manual
-      // Mas garantimos um ponto de partida suave:
-      yawOffset = Math.PI/2; // segue sua regra no mobile ao habilitar giro
-      // Recentrar uma vez após pequeno atraso (usuário levou o telefone ao visor)
-      setTimeout(recenterYaw, 600);
-
-      setTimeout(() => engine.resize(), 0);
-      startCountdownThenRun();
-    }
-
-    function exitCardboardMode(){
-      isCardboard = false;
-      // desfaz rig estéreo
-      if (camera && camera.rigMode && camera.rigCameras && camera.rigCameras.length){
-        camera.setCameraRigMode(BABYLON.Camera.RIG_MODE_NONE, {});
-      }
-      keepAwake(false);
-      hint.classList.add('hide');
-    }
-
   })();
   </script>
 </body>
 </html>
+

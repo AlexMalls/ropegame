@@ -266,6 +266,11 @@
         lavaMat.noiseTexture.uScale   = lavaMat.noiseTexture.vScale   = 1.6;
 
         lava.material = lavaMat;
+
+        // força depth correto
+        lavaMat.alpha = 1.0;              // totalmente opaca
+        lavaMat.backFaceCulling = false;  // garante render dos dois lados se precisar
+        lavaMat.needDepthPrePass = true;  // escreve primeiro no depth, respeitando a viga
       })();
 
       // === BRASAS/FAÍSCAS DE CALOR (GPUParticleSystem)
@@ -479,6 +484,7 @@
   </script>
 </body>
 </html>
+
 
 
 

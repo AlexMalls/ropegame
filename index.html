@@ -196,7 +196,7 @@
       const planeSize = roomSize - margin*2;
 
       const height = 4.2;            // altura total do colchão de névoa
-      const slices = 20;             // nº de fatias (mais = mais denso/caro)
+      const slices = 12;             // nº de fatias (mais = mais denso/caro)
       const baseAlpha = 0.1;       // opacidade base por camada
       const tint = new BABYLON.Color3(1.0, 0.36, 0.10); // tom quente
 
@@ -297,7 +297,7 @@
         ps.updateSpeed = 0.008;
         ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
 
-        ps.renderingGroupId = 1; // depois da névoa
+        ps.renderingGroupId = 3; // depois da névoa
         ps.start();
       })();
 
@@ -478,6 +478,7 @@
   </script>
 </body>
 </html>
+
 
 
 

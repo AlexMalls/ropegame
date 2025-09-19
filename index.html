@@ -315,10 +315,22 @@
     restart.addEventListener('click', () => {
       gameover.classList.add('hide');
       hud.setAttribute('aria-hidden','false');
+    
+      // RESETA posição, rotação e estado do jogador antes do countdown
       rig.position.copyFrom(new BABYLON.Vector3(0, 1.2, 38));
-      angle = 0; omega = 0;
+      rig.rotation.set(0, 0, 0);
+      angle = 0;
+      omega = 0;
+    
+      // garante que a câmera esteja limpa
+      if (camera.rotationQuaternion) {
+        camera.rotationQuaternion.copyFrom(BABYLON.Quaternion.Identity());
+      }
+    
+      // só depois inicia o countdown
       startCountdownThenRun();
     });
+
 
     // ===== Menu → iniciar
     play.addEventListener('click', async () => {
@@ -335,3 +347,4 @@
   </script>
 </body>
 </html>
+

@@ -77,7 +77,7 @@
       border-radius: 12px;
       background: linear-gradient(135deg, #2a003f, #5a0f75);
       box-shadow: 0 8px 24px rgba(90,15,117,.45), inset 0 1px 0 rgba(255,255,255,.08);
-      z-index: 4; /* acima da panel */
+      z-index: 4;
     }
     .vr-btn:hover {
       transform: translateY(-1px);
@@ -100,11 +100,12 @@
       <p>Pronto para mobile e desktop. Em celulares, o <b>giroscópio</b> liga automaticamente.</p>
       <div class="actions">
         <button id="play" class="btn" aria-label="Jogar">Jogar</button>
-        <!-- ⭐ Novo botão: Free Cam -->
         <button id="freecam" class="btn" aria-label="Modo Free Cam">Free Cam</button>
+        <!-- ⭐ Modo Livre -->
+        <button id="freemode" class="btn" aria-label="Modo Livre">Modo Livre</button>
       </div>
     </div>
-    <!-- ⭐ Botão VR Mode fora da panel para fixar no canto -->
+    <!-- Botão VR Mode fixo -->
     <button id="vrmode" class="btn vr-btn" aria-label="Ativar VR Mode">VR Mode</button>
   </div>
 
@@ -141,46 +142,42 @@
     const canvas = document.getElementById('game');
     const menu   = document.getElementById('menu');
     const play   = document.getElementById('play');
-    const freeBtn= document.getElementById('freecam'); // ⭐
-    const vrBtn  = document.getElementById('vrmode'); // ⭐ VR Mode
+    const freeBtn= document.getElementById('freecam');
+    const freemodeBtn = document.getElementById('freemode'); // ⭐
+    const vrBtn  = document.getElementById('vrmode');
     const hud    = document.getElementById('hud');
     const orientBadge = document.getElementById('orientBadge');
     const gameover = document.getElementById('gameover');
     const restart  = document.getElementById('restart');
     const needle = document.querySelector('#balanceMeter .needle');
-    const meter  = document.getElementById('balanceMeter'); // ⭐
+    const meter  = document.getElementById('balanceMeter');
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && screen.width < 1025);
 
-    // ⭐ Y da lava para calibrar blocões
     let LAVA_Y = null;
 
-    // Engine
     const engine = new BABYLON.Engine(canvas, true, { stencil:false });
     engine.setHardwareScalingLevel(isMobile ? 1.25 : 1.0);
 
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
-    // manter depth entre grupos
     scene.setRenderingAutoClearDepthStencil(1, false);
     scene.setRenderingAutoClearDepthStencil(2, false);
     scene.setRenderingAutoClearDepthStencil(3, false);
 
     scene.skipPointerMovePicking = true;
 
-    // ===== Fog + vinheta =====
+    // Fog + vinheta
     scene.fogMode  = BABYLON.Scene.FOGMODE_LINEAR;
     scene.fogColor = new BABYLON.Color3(0.0, 0.0, 0.0);
     scene.fogStart = 16;
     scene.fogEnd   = 120;
-
     scene.imageProcessingConfiguration.vignetteEnabled = true;
     scene.imageProcessingConfiguration.vignetteColor   = new BABYLON.Color4(0,0,0,1);
     scene.imageProcessingConfiguration.vignetteWeight  = 1.2;
-    scene.imageProcessingConfiguration.vignetteStretch = 0.0;
 
-    // ===== Cena base =====
+    // Câmera base + rig
     let camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 1.2, 38), scene);
     camera.attachControl(canvas, true);
     camera.speed = 0;
@@ -188,13 +185,11 @@
     camera.minZ = 0.1;
     camera.maxZ = 1000;
 
-    // Nó do "corpo" do jogador
     const rig = new BABYLON.TransformNode('playerRig', scene);
     rig.position.copyFrom(camera.position);
     camera.parent = rig;
     camera.position.set(0,0,0);
 
-    // 🔧 Pivô abaixo da câmera
     const PIVOT_DOWN = 0.6;
     rig.setPivotPoint(new BABYLON.Vector3(0, -PIVOT_DOWN, 0));
 
@@ -213,7 +208,7 @@
     cube.isPickable = false;
     cube.freezeWorldMatrix();
 
-    // ===== Viga =====
+    // Viga
     const beamY = -0.7;
     const endOffsetY = -0.7;
     const beamStart = new BABYLON.Vector3(rig.position.x, beamY, rig.position.z);
@@ -241,156 +236,87 @@
     beam.isPickable = false;
     beam.freezeWorldMatrix();
 
-    // ======== NÉVOA / LAVA / PARTÍCULAS ========
+    // Névoa/Lava/Partículas
     (function makeLayeredGroundFog(){
-      const roomWidth  = 350;
-      const roomDepth  = 105;
-      const margin     = 6;
-
+      const roomWidth  = 350, roomDepth  = 105, margin = 6;
       const planeWidth  = roomWidth  - margin*2;
       const planeHeight = roomDepth  - margin*2;
-
       const floorY   = -40;
-
-      const height = 5;
-      const slices = 12;
-      const baseAlpha = 0.10;
+      const height = 5, slices = 12, baseAlpha = 0.10;
       const tint = new BABYLON.Color3(1.0, 0.36, 0.10);
 
       const fogSlices = [];
       for (let i=0;i<slices;i++){
         const t = i/(slices-1);
         const y = floorY + 12 + t*height;
-
         const p = BABYLON.MeshBuilder.CreatePlane(`fogSlice${i}`, { width: planeWidth, height: planeHeight }, scene);
         p.position = new BABYLON.Vector3(0, y, 0);
         p.rotation.x = Math.PI/2;
 
         const m = new BABYLON.StandardMaterial(`fogMat${i}`, scene);
-        m.disableLighting = true;
-        m.backFaceCulling = false;
-
+        m.disableLighting = true; m.backFaceCulling = false;
         m.opacityTexture = new BABYLON.Texture("https://playground.babylonjs.com/textures/cloud.png", scene);
         m.opacityTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
         m.opacityTexture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-
         const scale = 2.2 + t*1.4 + Math.random()*0.4;
         m.opacityTexture.uScale = scale;
         m.opacityTexture.vScale = scale * (0.92 + Math.random()*0.16);
-
         m.emissiveColor = tint.scale(0.45 + (1.5 - t)*0.35);
         m.alpha = baseAlpha * (2.0 - Math.pow(t, 1.35));
         m.alphaMode = BABYLON.Engine.ALPHA_COMBINE;
+        m.fogEnabled = true; p.applyFog = true;
 
-        m.fogEnabled = true;
-        p.applyFog   = true;
-
-        p.material = m;
-
-        m.disableDepthWrite = true;
-        p.renderingGroupId = 2;
-        p.alphaIndex = i;
-
-        p.isPickable = false;
-        p.freezeWorldMatrix();
+        p.material = m; m.disableDepthWrite = true;
+        p.renderingGroupId = 2; p.alphaIndex = i;
+        p.isPickable = false; p.freezeWorldMatrix();
 
         const speedU = (0.025 + Math.random()*0.004) * (0.7 + (1.0 - t)*0.6);
         const speedV = (0.015 + Math.random()*0.003) * (0.7 + t*0.5);
         const dirU = Math.random() < 0.5 ? -1 : 1;
         const dirV = Math.random() < 0.5 ? -1 : 1;
-
         fogSlices.push({mat:m, speedU: speedU*dirU, speedV: speedV*dirV});
       }
 
       const glow = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 10, mainTextureRatio: 0.5 });
       glow.intensity = 0.5;
-      for (let i=0;i<slices;i++){
-        const fs = scene.getMeshByName(`fogSlice${i}`);
-        if (fs) glow.addExcludedMesh(fs);
-      }
+      for (let i=0;i<slices;i++){ const fs = scene.getMeshByName(`fogSlice${i}`); if (fs) glow.addExcludedMesh(fs); }
 
       (function makeLava(){
-        const lava = BABYLON.MeshBuilder.CreateGround("lava", {
-          width: planeWidth, height: planeHeight, subdivisions: 64
-        }, scene);
+        const lava = BABYLON.MeshBuilder.CreateGround("lava", { width: planeWidth, height: planeHeight, subdivisions: 64 }, scene);
         lava.position = new BABYLON.Vector3(0, floorY + 10.0, 0);
-        lava.renderingGroupId = 1;
-        lava.isPickable = false;
-        lava.freezeWorldMatrix();
-
+        lava.renderingGroupId = 1; lava.isPickable = false; lava.freezeWorldMatrix();
         LAVA_Y = lava.position.y;
 
         const lavaMat = new BABYLON.LavaMaterial("lavaMat", scene);
         lavaMat.noiseTexture  = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/cloud.png", scene);
         lavaMat.diffuseTexture = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/lavatile.jpg", scene);
-        lavaMat.speed = 0.06;
-        lavaMat.fogColor = new BABYLON.Color3(0.85, 0.28, 0.08);
+        lavaMat.speed = 0.06; lavaMat.fogColor = new BABYLON.Color3(0.85, 0.28, 0.08);
         lavaMat.diffuseTexture.uScale = lavaMat.diffuseTexture.vScale = 4;
         lavaMat.noiseTexture.uScale   = lavaMat.noiseTexture.vScale   = 4;
-        lavaMat.alpha = 1.0;
-        lavaMat.alphaMode = BABYLON.Engine.ALPHA_DISABLE;
-        lavaMat.disableDepthWrite = false;
-
+        lavaMat.alpha = 1.0; lavaMat.alphaMode = BABYLON.Engine.ALPHA_DISABLE; lavaMat.disableDepthWrite = false;
         lavaMat.fogEnabled = true;
-
         lava.material = lavaMat;
 
         scene.onBeforeRenderObservable.add(() => {
-          const dt = engine.getDeltaTime() / 1000;
-          const speed = 0.009;
-
-          if (lavaMat && lavaMat.diffuseTexture) {
-            lavaMat.diffuseTexture.uOffset += speed * dt;
-          }
-          if (lavaMat && lavaMat.noiseTexture) {
-            lavaMat.noiseTexture.uOffset += (speed * 0.5) * dt;
-          }
+          const dt = engine.getDeltaTime() / 1000, speed = 0.009;
+          if (lavaMat.diffuseTexture) lavaMat.diffuseTexture.uOffset += speed * dt;
+          if (lavaMat.noiseTexture)   lavaMat.noiseTexture.uOffset   += (speed * 0.5) * dt;
         });
 
         (function addLavaLights(){
           const lavaColor = new BABYLON.Color3(1.0, 0.45, 0.12);
+          const spot = new BABYLON.SpotLight("lavaSpot", new BABYLON.Vector3(0, LAVA_Y + 0.5, 0), new BABYLON.Vector3(0, 1, 0), Math.PI * 0.95, 10, scene);
+          spot.diffuse = lavaColor; spot.specular = lavaColor.scale(0.2); spot.intensity = 3; spot.range = 140;
 
-          const spot = new BABYLON.SpotLight(
-            "lavaSpot",
-            new BABYLON.Vector3(0, LAVA_Y + 0.5, 0),
-            new BABYLON.Vector3(0, 1, 0),
-            Math.PI * 0.95,
-            10,
-            scene
-          );
-          spot.diffuse = lavaColor;
-          spot.specular = lavaColor.scale(0.2);
-          spot.intensity = 3;
-          spot.range = 140;
+          const fillIntensity = 1.3, fillRange = 90;
+          const fill1 = new BABYLON.PointLight("lavaFillStart", new BABYLON.Vector3(beamStart.x, LAVA_Y + 0.8, beamStart.z), scene);
+          fill1.diffuse = lavaColor; fill1.specular = lavaColor.scale(0.15); fill1.intensity = fillIntensity; fill1.range = fillRange;
 
-          const fillIntensity = 1.3;
-          const fillRange = 90;
-
-          const fill1 = new BABYLON.PointLight(
-            "lavaFillStart",
-            new BABYLON.Vector3(beamStart.x, LAVA_Y + 0.8, beamStart.z),
-            scene
-          );
-          fill1.diffuse = lavaColor;
-          fill1.specular = lavaColor.scale(0.15);
-          fill1.intensity = fillIntensity;
-          fill1.range = fillRange;
-
-          const fill2 = new BABYLON.PointLight(
-            "lavaFillEnd",
-            new BABYLON.Vector3(beamEnd.x, LAVA_Y + 0.8, beamEnd.z),
-            scene
-          );
-          fill2.diffuse = lavaColor;
-          fill2.specular = lavaColor.scale(0.15);
-          fill2.intensity = fillIntensity;
-          fill2.range = fillRange;
+          const fill2 = new BABYLON.PointLight("lavaFillEnd", new BABYLON.Vector3(beamEnd.x, LAVA_Y + 0.8, beamEnd.z), scene);
+          fill2.diffuse = lavaColor; fill2.specular = lavaColor.scale(0.15); fill2.intensity = fillIntensity; fill2.range = fillRange;
 
           const hemi = new BABYLON.HemisphericLight("lavaHemi", new BABYLON.Vector3(0, -1, 0), scene);
-          hemi.diffuse = lavaColor.scale(0.25);
-          hemi.specular = new BABYLON.Color3(0,0,0);
-          hemi.groundColor = lavaColor.scale(0.55);
-          hemi.intensity = 0.55;
+          hemi.diffuse = lavaColor.scale(0.25); hemi.specular = new BABYLON.Color3(0,0,0); hemi.groundColor = lavaColor.scale(0.55); hemi.intensity = 0.55;
         })();
       })();
 
@@ -403,8 +329,7 @@
         ps.particleTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
         ps.emitter = new BABYLON.Vector3(0, floorY + 13, 0);
 
-        const halfX = planeWidth  * 0.5;
-        const halfZ = planeHeight * 0.5;
+        const halfX = planeWidth * 0.5, halfZ = planeHeight * 0.5;
         ps.minEmitBox = new BABYLON.Vector3(-halfX, 0, -halfZ);
         ps.maxEmitBox = new BABYLON.Vector3( halfX, 0,  halfZ);
 
@@ -428,7 +353,6 @@
         ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
 
         ps.renderingGroupId = 3;
-
         ps.applyFog = true;
 
         ps.start();
@@ -448,60 +372,36 @@
         acc = 0;
       });
     })();
-    // ======== FIM NÉVOA/LAVA ========
 
-    // ⭐ Blocos de início/fim
+    // Blocos nas pontas
     (function makeEndBlocks(){
       const cfg = { along: 10, side: 350, bottomExtra: 2, tilesPerUnit: 1, darkenLevel: 0.6 };
-
       const dir = beamDir.clone().normalize();
       const q = BABYLON.Quaternion.FromLookDirectionLH(dir, BABYLON.Axis.Y);
-
       function makeFloorMat(name, uTiles, vTiles){
         const m = new BABYLON.StandardMaterial(name, scene);
         const tex = new BABYLON.Texture("https://playground.babylonjs.com/textures/floor.png", scene);
-        tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
-        tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-        tex.uScale = Math.max(1, Math.round(uTiles));
-        tex.vScale = Math.max(1, Math.round(vTiles));
-        tex.level  = cfg.darkenLevel;
-        m.diffuseTexture = tex;
-        m.specularColor = new BABYLON.Color3(0,0,0);
-        return m;
+        tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE; tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+        tex.uScale = Math.max(1, Math.round(uTiles)); tex.vScale = Math.max(1, Math.round(vTiles)); tex.level = cfg.darkenLevel;
+        m.diffuseTexture = tex; m.specularColor = new BABYLON.Color3(0,0,0); return m;
       }
-
       function makeEndBlock(name, endPoint, dirSign){
-        const topY = endPoint.y;
-        const bottomY = (LAVA_Y ?? -35) - cfg.bottomExtra;
-        const height = topY - bottomY;
-        const centerY = bottomY + height * 0.5;
-
-        const box = BABYLON.MeshBuilder.CreateBox(name, {
-          width:  cfg.side,
-          height: height,
-          depth:  cfg.along
-        }, scene);
-
+        const topY = endPoint.y, bottomY = (LAVA_Y ?? -35) - cfg.bottomExtra;
+        const height = topY - bottomY, centerY = bottomY + height * 0.5;
+        const box = BABYLON.MeshBuilder.CreateBox(name, { width: cfg.side, height, depth: cfg.along }, scene);
         box.rotationQuaternion = q.clone();
-
         const offset = dir.scale((cfg.along * 0.5) * dirSign);
         box.position = new BABYLON.Vector3(endPoint.x, centerY, endPoint.z).addInPlace(offset);
-
-        const uTiles = cfg.side   * cfg.tilesPerUnit;
-        const vTiles = height     * cfg.tilesPerUnit;
+        const uTiles = cfg.side * cfg.tilesPerUnit, vTiles = height * cfg.tilesPerUnit;
         box.material = makeFloorMat(name + "Mat", uTiles, vTiles);
-
-        box.isPickable = false;
-        box.renderingGroupId = 0;
-        box.freezeWorldMatrix();
+        box.isPickable = false; box.renderingGroupId = 0; box.freezeWorldMatrix();
         return box;
       }
-
       makeEndBlock("startBlock", beamStart, -1);
       makeEndBlock("endBlock",   beamEnd,    +1);
     })();
 
-    // ======= LOOP E INPUTS =======
+    // ===== Estados / inputs =====
     let gameState = 'menu';
     let angle = 0, omega = 0;
     const K_GRAV = 1.6, K_DAMP = 1.1, K_INPUT = 2.5, K_RESIST = 0.7;
@@ -510,7 +410,7 @@
     const GAME_OVER_LIMIT = 0.8;
     const SPEED = 2.0;
 
-    // Inputs "play"
+    // Inputs mecânica original
     let keyTarget = 0, keyInput = 0;
     window.addEventListener('keydown', (e)=>{
       if (e.code === 'KeyA') keyTarget = 1; else if (e.code === 'KeyD') keyTarget = -1;
@@ -519,7 +419,7 @@
       if ((e.code === 'KeyA' && keyTarget === 1) || (e.code === 'KeyD' && keyTarget === -1)) keyTarget = 0;
     });
 
-    // Inputs "freecam"
+    // Freecam extra
     let freeUp=0, freeDown=0, freeSprint=0;
     function onFreeKeyDown(e){
       if (gameState !== 'freecam') return;
@@ -546,7 +446,7 @@
       needle.style.left = `calc(50% + ${percent}%)`;
     }
 
-    // ===== VR MODE (split-screen com a MESMA visão)
+    // ========= VR Mode infra =========
     let vrMode = false;
     let vrRightCam = null;
 
@@ -556,47 +456,73 @@
       vrRightCam.fov = camera.fov;
       vrRightCam.minZ = camera.minZ;
       vrRightCam.maxZ = camera.maxZ;
-
-      // copiar orientação
       if (camera.rotationQuaternion){
         if (!vrRightCam.rotationQuaternion) vrRightCam.rotationQuaternion = new BABYLON.Quaternion();
         vrRightCam.rotationQuaternion.copyFrom(camera.rotationQuaternion);
         vrRightCam.rotation.set(0,0,0);
-      }else{
+      } else {
         vrRightCam.rotation.copyFrom(camera.rotation);
         vrRightCam.rotationQuaternion = null;
       }
-      // mesma posição relativa (ambas são filhas do mesmo parent)
       vrRightCam.position.copyFrom(camera.position);
     }
 
     function enableVRMode(){
-      // viewport esquerda na câmera principal
       camera.viewport = new BABYLON.Viewport(0, 0, 0.5, 1);
-
-      // câmera direita "fantasma" seguindo o mesmo rig
       if (vrRightCam) vrRightCam.dispose();
       vrRightCam = new BABYLON.UniversalCamera("camRight", BABYLON.Vector3.Zero(), scene);
       vrRightCam.parent = camera.parent;
       vrRightCam.position.copyFrom(camera.position);
       vrRightCam.viewport = new BABYLON.Viewport(0.5, 0, 0.5, 1);
       syncRightCamFromLeft();
-
       scene.activeCameras = [camera, vrRightCam];
       vrBtn.textContent = "VR Mode: ON";
     }
-
     function disableVRMode(){
       camera.viewport = new BABYLON.Viewport(0, 0, 1, 1);
       scene.activeCameras = [camera];
       if (vrRightCam){ vrRightCam.dispose(); vrRightCam = null; }
       vrBtn.textContent = "VR Mode";
     }
+    function rebuildVRIfNeeded(){ if (vrMode) enableVRMode(); else disableVRMode(); }
 
-    function rebuildVRIfNeeded(){
-      if (vrMode) enableVRMode(); else disableVRMode();
+    // ========= MODO LIVRE =========
+    let freemodeForward = 0;   // -1 trás, +1 frente
+    let freemodeStep = 3.0;    // metros por toque (mobile)
+    let freemodeCooldown = 0;  // evita spam de toques
+
+    function cameraForwardXZ(){
+      // direção para frente baseada na câmera atual, projetada no XZ
+      const fwd = camera.getDirection(BABYLON.Axis.Z).clone();
+      fwd.y = 0;
+      const len = fwd.length();
+      return len > 0.0001 ? fwd.scale(1/len) : new BABYLON.Vector3(0,0,1);
     }
 
+    // toque/click no mobile = “passo” pra frente
+    canvas.addEventListener("click", () => {
+      if (gameState === "freemode" && isMobile) {
+        if (freemodeCooldown <= 0) {
+          const dir = cameraForwardXZ();
+          rig.position.addInPlace(dir.scale(freemodeStep));
+          freemodeCooldown = 0.18; // ~180ms
+        }
+      }
+    });
+
+    // setas ↑/↓ no desktop = andar contínuo
+    window.addEventListener("keydown", (e) => {
+      if (gameState !== "freemode") return;
+      if (e.code === "ArrowUp") freemodeForward = +1;
+      if (e.code === "ArrowDown") freemodeForward = -1;
+    });
+    window.addEventListener("keyup", (e) => {
+      if (gameState !== "freemode") return;
+      if (e.code === "ArrowUp"   && freemodeForward === +1) freemodeForward = 0;
+      if (e.code === "ArrowDown" && freemodeForward === -1) freemodeForward = 0;
+    });
+
+    // ========= Loop principal =========
     engine.runRenderLoop(()=>{
       const dt = engine.getDeltaTime() / 1000;
 
@@ -637,9 +563,16 @@
           const dy = (freeUp - freeDown) * fc.speed * dt * 3.0;
           fc.position.y += dy;
         }
+      } else if (gameState === 'freemode'){
+        if (freemodeCooldown > 0) freemodeCooldown -= dt;
+        // movimento contínuo no desktop
+        if (freemodeForward !== 0){
+          const dir = cameraForwardXZ();
+          rig.position.addInPlace(dir.scale(freemodeForward * dt * 4.0));
+        }
       }
 
-      // manter a segunda câmera sincronizada
+      // mantém a segunda câmera em sincronia (VR mode)
       syncRightCamFromLeft();
 
       scene.render();
@@ -650,7 +583,7 @@
       engine.setHardwareScalingLevel(isMobile ? 1.25 : 1.0);
     });
 
-    // ===== HUD: orientação
+    // HUD: orientação
     function refreshOrientationBadge(){
       const isLandscape = window.matchMedia('(orientation: landscape)').matches;
       orientBadge.textContent = isLandscape ? 'Landscape' : 'Portrait';
@@ -658,7 +591,7 @@
     refreshOrientationBadge();
     window.matchMedia('(orientation: landscape)').addEventListener?.('change', refreshOrientationBadge);
 
-    // ===== Giroscópio (só na câmera/cabeça)
+    // Giroscópio
     let yawOffset = (isMobile ? Math.PI / 2 : 0), pitchOffset = 0, rollOffset = 0;
 
     async function requestMotionPermission(){
@@ -680,11 +613,8 @@
       devcam.fov = fov; devcam.minZ = minZ; devcam.maxZ = maxZ;
       devcam.attachControl(canvas, true);
       devcam._disablePointerInputWhenUsingDeviceOrientation = false;
-      devcam.parent = rig;
-      devcam.position.set(0,0,0);
-
-      scene.activeCamera = devcam;
-      camera = devcam;
+      devcam.parent = rig; devcam.position.set(0,0,0);
+      scene.activeCamera = devcam; camera = devcam;
 
       camera.onAfterCheckInputsObservable.clear();
       camera.onAfterCheckInputsObservable.add(() => {
@@ -694,7 +624,6 @@
         camera.rotationQuaternion.copyFrom(finalQ);
       });
 
-      // se VR já estava ativo, reconstrói split com a nova camera
       rebuildVRIfNeeded();
     }
 
@@ -706,19 +635,10 @@
       fc.fov = fov; fc.minZ = 0.1; fc.maxZ = 1000;
       fc.rotation = new BABYLON.Vector3(0, 0, 0);
       fc.setTarget(beamMid);
-
-      fc.keysUp    = [87,38];
-      fc.keysDown  = [83,40];
-      fc.keysLeft  = [65,37];
-      fc.keysRight = [68,39];
-      fc.speed = 3.0;
-      fc.inertia = 0.8;
-      fc.angularSensibility = 1300;
-
+      fc.keysUp=[87,38]; fc.keysDown=[83,40]; fc.keysLeft=[65,37]; fc.keysRight=[68,39];
+      fc.speed = 3.0; fc.inertia = 0.8; fc.angularSensibility = 1300;
       fc.attachControl(canvas, true);
-      scene.activeCamera = fc;
-      camera = fc;
-
+      scene.activeCamera = fc; camera = fc;
       rebuildVRIfNeeded();
     }
 
@@ -779,7 +699,7 @@
       startCountdownThenRun();
     }, { passive:true });
 
-    // ⭐ Ativa Free Cam
+    // Free Cam
     freeBtn.addEventListener('click', () => {
       menu.classList.add('hide');
       hud.setAttribute('aria-hidden','true');
@@ -790,7 +710,18 @@
       setTimeout(() => engine.resize(), 0);
     }, { passive:true });
 
-    // ⭐ Toggle VR Mode (split-screen)
+    // ⭐ Botão Modo Livre
+    freemodeBtn.addEventListener("click", () => {
+      menu.classList.add("hide");
+      hud.setAttribute("aria-hidden","true");
+      meter.style.display = "none";
+      gameState = "freemode";
+      // usa a câmera "de cabeça" (gyro no mobile, mouse no desktop)
+      if (isMobile) { enableGyroAuto(); } else { swapToDeviceOrientationCamera(); }
+      setTimeout(() => engine.resize(), 0);
+    }, { passive:true });
+
+    // VR Mode
     vrBtn.addEventListener('click', () => {
       vrMode = !vrMode;
       if (vrMode) enableVRMode(); else disableVRMode();

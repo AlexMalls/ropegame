@@ -131,6 +131,12 @@
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
+    // ⚙️ Manter o depth buffer entre os grupos (0→1→2→3)
+    // Assim a lava (grupo 1) respeita a profundidade da viga (grupo 0)
+    scene.setRenderingAutoClearDepthStencil(1, false);
+    scene.setRenderingAutoClearDepthStencil(2, false);
+    scene.setRenderingAutoClearDepthStencil(3, false);
+
     // Fog global sutil pra amaciar distância (não rouba a cena)
     scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
     scene.fogColor = new BABYLON.Color3(0.03, 0.025, 0.035);
@@ -187,7 +193,7 @@
       metalMat.diffuseTexture.vScale = 1;
     }
     beam.material = metalMat;
-
+    beam.renderingGroupId = 0; // explícito: viga no grupo 0 (mais cedo) + depth preservado
 
     // ======== NÉVOA “VOLUMÉTRICA” POR FATIAS ========
     (function makeLayeredGroundFog(){
@@ -196,9 +202,9 @@
       const margin   = 6;
       const planeSize = roomSize - margin*2;
 
-      const height = 4.2;            // altura total do colchão de névoa
-      const slices = 12;             // nº de fatias (mais = mais denso/caro)
-      const baseAlpha = 0.1;       // opacidade base por camada
+      const height = 4.2;     // altura total do colchão de névoa
+      const slices = 12;      // nº de fatias (suba p/ 20–24 se quiser ainda mais suave)
+      const baseAlpha = 0.10; // opacidade base por camada
       const tint = new BABYLON.Color3(1.0, 0.36, 0.10); // tom quente
 
       const fogSlices = [];
@@ -223,18 +229,19 @@
         m.opacityTexture.uScale = scale;
         m.opacityTexture.vScale = scale * (0.92 + Math.random()*0.16);
 
+        // mais brilhosa
         m.emissiveColor = tint.scale(0.45 + (1.0 - t)*0.35);
         m.alpha = baseAlpha * (1.0 - Math.pow(t, 1.35));
         m.alphaMode = BABYLON.Engine.ALPHA_COMBINE;
 
         p.material = m;
 
-        // >>> para a névoa aparecer por cima e ver a lava através:
-        m.disableDepthWrite = true;       // não escrever no depth
-        p.renderingGroupId = 2;           // depois da lava
-        p.alphaIndex = i;                 // ordena de baixo→topo
+        // névoa por cima (translúcida) respeitando depth do que já foi desenhado
+        m.disableDepthWrite = true; // não escreve no depth
+        p.renderingGroupId = 2;     // desenha depois da lava
+        p.alphaIndex = i;           // ordena base→topo
 
-        // >>> sua velocidade escolhida:
+        // velocidade que você escolheu
         const speedU = (0.025 + Math.random()*0.004) * (0.7 + (1.0 - t)*0.6);
         const speedV = (0.015 + Math.random()*0.003) * (0.7 + t*0.5);
         const dirU = Math.random() < 0.5 ? -1 : 1;
@@ -243,27 +250,33 @@
         fogSlices.push({mat:m, speedU: speedU*dirU, speedV: speedV*dirV});
       }
 
-      // Glow suave (lava/brasas e emissivos ganham um halo)
+      // Glow (halo) — mais forte para destacar a névoa. Obs: o brilho é pós-processo aditivo.
       const glow = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 16 });
       glow.intensity = 0.5;
 
-      // === LAVA ANIMADA (LavaMaterial)
+      // === LAVA ANIMADA (LavaMaterial) — opaca e respeitando depth
       (function makeLava(){
         const lava = BABYLON.MeshBuilder.CreateGround("lava", {
           width: planeSize, height: planeSize, subdivisions: 160
         }, scene);
         lava.position = new BABYLON.Vector3(0, floorY + 0.015, 0);
-        lava.renderingGroupId = 1; // desenha antes da névoa
+        lava.renderingGroupId = 1; // desenha após a viga, mas depth é preservado
 
         const lavaMat = new BABYLON.LavaMaterial("lavaMat", scene);
         lavaMat.noiseTexture  = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/cloud.png", scene);
         lavaMat.diffuseTexture = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/lavatile.jpg", scene);
-        lavaMat.speed = 0.06; // bem sutil
+        lavaMat.speed = 0.06; // sutil
         lavaMat.fogColor = new BABYLON.Color3(0.85, 0.28, 0.08);
 
-        // tiling um pouco maior para reduzir “ruído”
+        // tiling levemente maior
         lavaMat.diffuseTexture.uScale = lavaMat.diffuseTexture.vScale = 1.6;
         lavaMat.noiseTexture.uScale   = lavaMat.noiseTexture.vScale   = 1.6;
+
+        // 👇 garantir que a lava é tratada como opaca
+        lavaMat.alpha = 1.0;
+        lavaMat.alphaMode = BABYLON.Engine.ALPHA_DISABLE;
+        lavaMat.disableDepthWrite = false;   // escreve no depth
+        lavaMat.needDepthPrePass = false;    // desnecessário aqui
 
         lava.material = lavaMat;
       })();
@@ -298,7 +311,7 @@
         ps.updateSpeed = 0.008;
         ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
 
-        ps.renderingGroupId = 3; // depois da névoa
+        ps.renderingGroupId = 3; // por último
         ps.start();
       })();
 

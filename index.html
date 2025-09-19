@@ -70,7 +70,7 @@
 
   <!-- Babylon Core -->
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
-  <!-- Materials Library (para usar o LavaMaterial). CDN para prototipagem. -->
+  <!-- Materials Library (LavaMaterial) -->
   <script src="https://cdn.jsdelivr.net/npm/babylonjs-materials/babylon.lavaMaterial.min.js"></script>
 </head>
 <body>
@@ -228,7 +228,12 @@
 
         p.material = m;
 
-        // >>> Você disse que curtiu mais rápido — ajuste aqui:
+        // >>> para a névoa aparecer por cima e ver a lava através:
+        m.disableDepthWrite = true;       // não escrever no depth
+        p.renderingGroupId = 2;           // depois da lava
+        p.alphaIndex = i;                 // ordena de baixo→topo
+
+        // >>> sua velocidade escolhida:
         const speedU = (0.025 + Math.random()*0.004) * (0.7 + (1.0 - t)*0.6);
         const speedV = (0.015 + Math.random()*0.003) * (0.7 + t*0.5);
         const dirU = Math.random() < 0.5 ? -1 : 1;
@@ -243,18 +248,22 @@
 
       // === LAVA ANIMADA (LavaMaterial)
       (function makeLava(){
-        // Mesmo tamanho da área interna
         const lava = BABYLON.MeshBuilder.CreateGround("lava", {
           width: planeSize, height: planeSize, subdivisions: 160
         }, scene);
         lava.position = new BABYLON.Vector3(0, floorY + 0.015, 0);
+        lava.renderingGroupId = 1; // desenha antes da névoa
 
-        // Material de lava — precisa de noise + diffuse
         const lavaMat = new BABYLON.LavaMaterial("lavaMat", scene);
         lavaMat.noiseTexture  = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/cloud.png", scene);
         lavaMat.diffuseTexture = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/lavatile.jpg", scene);
-        lavaMat.speed = 0.18; // 0.10–0.25 dá aquele “borbulhar” sutil
-        lavaMat.fogColor = new BABYLON.Color3(0.95, 0.30, 0.08); // névoa da lava
+        lavaMat.speed = 0.06; // bem sutil
+        lavaMat.fogColor = new BABYLON.Color3(0.85, 0.28, 0.08);
+
+        // tiling um pouco maior para reduzir “ruído”
+        lavaMat.diffuseTexture.uScale = lavaMat.diffuseTexture.vScale = 1.6;
+        lavaMat.noiseTexture.uScale   = lavaMat.noiseTexture.vScale   = 1.6;
+
         lava.material = lavaMat;
       })();
 
@@ -272,28 +281,27 @@
         ps.minEmitBox = new BABYLON.Vector3(-half, 0, -half);
         ps.maxEmitBox = new BABYLON.Vector3( half, 0,  half);
 
-        // Cores: branco → laranja → desaparecer
         ps.color1 = new BABYLON.Color4(1.0, 0.95, 0.85, 0.95);
         ps.color2 = new BABYLON.Color4(1.0, 0.30, 0.05, 0.85);
         ps.colorDead = new BABYLON.Color4(1, 0.2, 0.0, 0.0);
 
         ps.minSize = 0.06; ps.maxSize = 0.14;
         ps.minLifeTime = 1.2; ps.maxLifeTime = 2.6;
-        ps.emitRate = 120; // densidade das brasas (80–200)
+        ps.emitRate = 120;
 
-        // Sobe devagar, leve drift lateral
         ps.direction1 = new BABYLON.Vector3(-0.10,  0.35, -0.10);
         ps.direction2 = new BABYLON.Vector3( 0.10,  0.55,  0.10);
-        ps.gravity = new BABYLON.Vector3(0, -0.05, 0); // puxa levemente pra baixo pra “dançar”
+        ps.gravity = new BABYLON.Vector3(0, -0.05, 0);
         ps.minAngularSpeed = -0.8; ps.maxAngularSpeed = 0.8;
         ps.minEmitPower = 0.15; ps.maxEmitPower = 0.35;
         ps.updateSpeed = 0.008;
         ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
 
+        ps.renderingGroupId = 3; // depois da névoa
         ps.start();
       })();
 
-      // Animação das texturas da névoa (brisa/quente)
+      // animação das texturas da névoa (brisa/quente)
       scene.onBeforeRenderObservable.add(()=>{
         const dt = engine.getDeltaTime()/1000;
         for (const s of fogSlices){

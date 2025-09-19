@@ -198,6 +198,68 @@
     }
     beam.material = metalMat;
 
+    // <<< COLE AQUI >>>
+    (function makeGroundFog(){
+      const roomSize = 80;            // seu box tem size 80 → piso interno em y = -40
+      const floorY   = -40;
+      const fogY     = floorY + 0.8;  // altura base da névoa, levemente acima do piso
+      const margin   = 6;             // margem das paredes p/ evitar clipping na box
+
+      const fog = BABYLON.GPUParticleSystem && BABYLON.GPUParticleSystem.IsSupported
+        ? new BABYLON.GPUParticleSystem("groundFog", { capacity: 6000 }, scene)
+        : new BABYLON.ParticleSystem("groundFog", 6000, scene);
+
+      fog.particleTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
+
+      fog.emitter   = new BABYLON.Vector3(0, fogY, 0);
+      const half = roomSize * 0.5 - margin;
+      fog.minEmitBox = new BABYLON.Vector3(-half, 0, -half);
+      fog.maxEmitBox = new BABYLON.Vector3( half, 0,  half);
+
+      fog.color1 = new BABYLON.Color4(1.0, 0.45, 0.18, 0.10);
+      fog.color2 = new BABYLON.Color4(1.0, 0.25, 0.05, 0.08);
+      fog.colorDead = new BABYLON.Color4(1, 0.2, 0.0, 0.0);
+
+      fog.minSize = 1.2; fog.maxSize = 3.8;
+      fog.minLifeTime = 3.0; fog.maxLifeTime = 7.0;
+      fog.emitRate = 800;
+
+      fog.gravity = new BABYLON.Vector3(0, -0.02, 0);
+      fog.direction1 = new BABYLON.Vector3(-0.25, 0.05, -0.25);
+      fog.direction2 = new BABYLON.Vector3( 0.25, 0.00,  0.25);
+      fog.minAngularSpeed = -0.2; fog.maxAngularSpeed = 0.2;
+      fog.minEmitPower = 0.05; fog.maxEmitPower = 0.15;
+      fog.updateSpeed = 0.015;
+      fog.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+
+      const maxFogHeight = 3.0;
+      const _updateFunc = fog.updateFunction;
+      fog.updateFunction = function(particles){
+        _updateFunc.call(fog, particles);
+        for (let p of particles) {
+          if (!p || !p.position) continue;
+          const h = p.position.y - floorY;
+          if (h > maxFogHeight) p.age = p.lifeTime;
+        }
+      };
+
+      fog.start();
+
+      const glow = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 16 });
+      glow.intensity = 0.35;
+
+      const heatPlane = BABYLON.MeshBuilder.CreatePlane("heat", { size: roomSize - margin*2 }, scene);
+      heatPlane.position = new BABYLON.Vector3(0, floorY + 0.05, 0);
+      heatPlane.rotation.x = Math.PI / 2;
+      const heatMat = new BABYLON.StandardMaterial("heatMat", scene);
+      heatMat.disableLighting = true;
+      heatMat.emissiveColor = new BABYLON.Color3(1.0, 0.25, 0.06);
+      heatMat.alpha = 0.05;
+      heatMat.backFaceCulling = false;
+      heatPlane.material = heatMat;
+    })();
+    // <<< FIM DA NÉVOA >>>
+
     engine.runRenderLoop(() => scene.render());
     window.addEventListener('resize', () => engine.resize());
 
@@ -363,5 +425,6 @@
   </script>
 </body>
 </html>
+
 
 

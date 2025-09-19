@@ -187,9 +187,6 @@
       metalMat.diffuseTexture.vScale = 1;
     }
     beam.material = metalMat;
-    beam.renderingGroupId = 4;
-    beam.alwaysSelectAsActiveMesh = true;
-    beam.material.needDepthPrePass = true; // força a usar depth buffer antes de pintar
 
 
     // ======== NÉVOA “VOLUMÉTRICA” POR FATIAS ========
@@ -482,6 +479,7 @@
   </script>
 </body>
 </html>
+
 
 
 

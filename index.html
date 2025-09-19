@@ -285,10 +285,10 @@
     // ===== Mecânica de equilíbrio
     let gameState = 'menu';
     let angle = 0, omega = 0;
-    const K_GRAV = 1.6, K_DAMP = 1.1, K_INPUT = 2.0, K_RESIST = 1.2;
+    const K_GRAV = 1.6, K_DAMP = 1.1, K_INPUT = 2.5, K_RESIST = 0.7;
     const MAX_ROLL_FOR_INPUT = 0.6;
     const FALL_LIMIT = 0.9;
-    const GAME_OVER_LIMIT = isMobile ? 0.55 : 0.8;
+    const GAME_OVER_LIMIT = isMobile ? 0.8 : 0.8;
     const SPEED = 2.0;
 
     function updateMeter(angle){
@@ -363,3 +363,4 @@
   </script>
 </body>
 </html>
+

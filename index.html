@@ -152,7 +152,7 @@
     // ===== Limite de visão suave (Fog linear + vinheta) =====
     scene.fogMode  = BABYLON.Scene.FOGMODE_LINEAR;
     scene.fogColor = new BABYLON.Color3(0.0, 0.0, 0.0); // escurece para preto
-    scene.fogStart = 12;    // começa a escurecer a ~6 unidades da câmera
+    scene.fogStart = 16;    // começa a escurecer a ~6 unidades da câmera
     scene.fogEnd   = 120;   // escuro total por volta de 80 (ajuste aqui)
 
     // Vinheta global sutil para reforçar a “muralha de escuridão”
@@ -236,7 +236,7 @@
       // Base do "chão" da sala (para posicionar névoa e lava)
       const floorY   = -40;
 
-      const height = 4.2;
+      const height = 5;
       const slices = 12;
       const baseAlpha = 0.10;
       const tint = new BABYLON.Color3(1.0, 0.36, 0.10);
@@ -263,7 +263,7 @@
         m.opacityTexture.uScale = scale;
         m.opacityTexture.vScale = scale * (0.92 + Math.random()*0.16);
 
-        m.emissiveColor = tint.scale(0.45 + (1.0 - t)*0.35);
+        m.emissiveColor = tint.scale(0.45 + (1.5 - t)*0.35);
         m.alpha = baseAlpha * (2.0 - Math.pow(t, 1.35));
         m.alphaMode = BABYLON.Engine.ALPHA_COMBINE;
 
@@ -354,7 +354,7 @@
           );
           spot.diffuse = lavaColor;
           spot.specular = lavaColor.scale(0.2);
-          spot.intensity = 2.2;
+          spot.intensity = 3;
           spot.range = 140;
 
           // Fills nas pontas (realçar paredões)
@@ -762,4 +762,5 @@
   </script>
 </body>
 </html>
+
 

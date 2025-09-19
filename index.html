@@ -37,10 +37,7 @@
     .btn:hover{ transform: translateY(-1px); box-shadow: 0 16px 42px rgba(11,42,107,.55), inset 0 1px 0 rgba(255,255,255,.09); }
     .btn:active{ transform: translateY(0); filter: brightness(.96); }
 
-    .btn.small{ padding:10px 14px; font-weight:700; font-size:14px; border-radius:12px; }
-    .btn.ghost{ background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)); box-shadow:none; border:1px solid rgba(255,255,255,.08); }
-
-    /* ===== HUD Responsiva ===== */
+    /* ===== HUD ===== */
     .hud{ position:fixed; inset:0; z-index:2; pointer-events:none;
       padding: calc(env(safe-area-inset-top,0px) + 8px) calc(env(safe-area-inset-right,0px) + 12px) calc(env(safe-area-inset-bottom,0px) + 8px) calc(env(safe-area-inset-left,0px) + 12px);
       display:flex; flex-direction:column; justify-content:space-between; }
@@ -48,18 +45,45 @@
     .hud .left,.hud .right{ display:flex; align-items:center; gap:10px; }
     .hud .badge{ pointer-events:none; opacity:.75; font-weight:700; font-size:12px; padding:6px 8px; border-radius:10px;
       background: rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.08); }
-    .hud .controls button{ pointer-events:auto; }
 
     @media (orientation: landscape){
       .hud{ padding-left: calc(env(safe-area-inset-left,0px) + 18px); padding-right: calc(env(safe-area-inset-right,0px) + 18px); }
     }
 
-    /* ===== Game Over mais escuro ===== */
+    /* ===== Game Over ===== */
     #gameover{
       z-index:4;
       background:
         linear-gradient(180deg, rgba(0,0,0,.88), rgba(0,0,0,.92)),
         radial-gradient(700px 500px at 50% 18%, rgba(11,42,107,.22), rgba(0,0,0,0) 60%);
+    }
+
+    /* ===== Régua de Equilíbrio ===== */
+    .meter {
+      width: 120px;
+      height: 10px;
+      border-radius: 12px;
+      background: rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.08);
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 1px 2px rgba(0,0,0,.5);
+    }
+    .meter .track { width: 100%; height: 100%; position: relative; }
+    .meter .centerMark {
+      position: absolute; top: 50%; left: 50%;
+      width: 2px; height: 70%;
+      background: var(--navy);
+      transform: translate(-50%, -50%);
+      border-radius: 2px; opacity: .85;
+    }
+    .meter .needle {
+      position: absolute; top: 50%; left: 50%;
+      width: 8px; height: 70%;
+      background: var(--fg);
+      border-radius: 3px;
+      transform: translate(-50%, -50%);
+      transition: left 0.05s linear;
     }
   </style>
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
@@ -73,7 +97,6 @@
       <h1>FPS 3D • Protótipo</h1>
       <p>Pronto para mobile e desktop. Em celulares, o <b>giroscópio</b> liga automaticamente.</p>
       <button id="play" class="btn" aria-label="Jogar">Jogar</button>
-      <div class="footer" style="margin-top:12px; font-size:12px; opacity:.55;">Dica: use <b>Calibrar</b> para alinhar o olhar.</div>
     </div>
   </div>
 
@@ -91,7 +114,12 @@
     <div class="row top">
       <div class="left"><span class="badge">FPS 3D</span></div>
       <div class="right controls">
-        <button id="calBtn" class="btn small ghost">Calibrar</button>
+        <div id="balanceMeter" class="meter">
+          <div class="track">
+            <div class="centerMark"></div>
+            <div class="needle"></div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="row bottom">
@@ -106,10 +134,10 @@
     const menu   = document.getElementById('menu');
     const play   = document.getElementById('play');
     const hud    = document.getElementById('hud');
-    const calBtn = document.getElementById('calBtn');
     const orientBadge = document.getElementById('orientBadge');
     const gameover = document.getElementById('gameover');
     const restart  = document.getElementById('restart');
+    const needle = document.querySelector('#balanceMeter .needle');
 
     // Detecção simples de mobile
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && screen.width < 1025);
@@ -145,9 +173,9 @@
     crateMat.specularColor = new BABYLON.Color3(0.1,0.1,0.1);
     cube.material = crateMat;
 
-    // ===== Corda/Viga metálica =====
+    // ===== Viga =====
     const beamY = 0.12;
-    const endOffsetY = -0.65; // ajuste manual
+    const endOffsetY = -0.65;
     const beamStart = new BABYLON.Vector3(rig.position.x, beamY, rig.position.z);
     const beamEnd   = new BABYLON.Vector3(cube.position.x, beamY + endOffsetY, cube.position.z);
     const beamDir   = beamEnd.subtract(beamStart);
@@ -221,23 +249,13 @@
       swapToDeviceOrientationCamera();
     }
 
-    function calibrate(){
-      if (!camera.rotationQuaternion) return;
-      const e = camera.rotationQuaternion.toEulerAngles();
-      yawOffset   += -e.y;
-      pitchOffset += -e.x;
-      rollOffset   = 0;
-    }
-
     // ===== Input PC
     let keyTarget = 0, keyInput = 0;
     window.addEventListener('keydown', (e)=>{
-      if (e.code === 'KeyA') keyTarget = 1;  // empurra para direita
-      else if (e.code === 'KeyD') keyTarget = -1; // empurra para esquerda
+      if (e.code === 'KeyA') keyTarget = 1; else if (e.code === 'KeyD') keyTarget = -1;
     });
-
     window.addEventListener('keyup', (e)=>{
-      if ((e.code === 'KeyA' && keyTarget === -1) || (e.code === 'KeyD' && keyTarget === 1)) keyTarget = 0;
+      if ((e.code === 'KeyA' && keyTarget === 1) || (e.code === 'KeyD' && keyTarget === -1)) keyTarget = 0;
     });
 
     // ===== Contador
@@ -270,8 +288,14 @@
     const K_GRAV = 1.6, K_DAMP = 1.1, K_INPUT = 2.0, K_RESIST = 1.2;
     const MAX_ROLL_FOR_INPUT = 0.6;
     const FALL_LIMIT = 0.9;
-    const GAME_OVER_LIMIT = isMobile ? 0.8 : 0.8;
+    const GAME_OVER_LIMIT = isMobile ? 0.55 : 0.8;
     const SPEED = 2.0;
+
+    function updateMeter(angle){
+      const max = FALL_LIMIT;
+      const percent = (angle / max) * 50;
+      needle.style.left = `calc(50% + ${percent}%)`;
+    }
 
     engine.runRenderLoop(()=>{
       const dt = engine.getDeltaTime() / 1000;
@@ -283,7 +307,7 @@
           const e = camera.rotationQuaternion.toEulerAngles();
           const phoneRoll = e.z;
           const norm = Math.max(-1, Math.min(1, phoneRoll / MAX_ROLL_FOR_INPUT));
-          userInput = norm;
+          userInput = norm; // não invertido
         }
         const effective = userInput / (1 + K_RESIST * Math.abs(angle));
 
@@ -292,7 +316,8 @@
         angle += omega * dt;
         rig.rotation.z = angle;
 
-        // GAME OVER CHECK
+        updateMeter(angle);
+
         if (Math.abs(angle) >= GAME_OVER_LIMIT){
           triggerGameOver();
           return;
@@ -317,22 +342,14 @@
     restart.addEventListener('click', () => {
       gameover.classList.add('hide');
       hud.setAttribute('aria-hidden','false');
-    
-      // RESETA posição, rotação e estado do jogador antes do countdown
       rig.position.copyFrom(new BABYLON.Vector3(0, 1.2, 38));
-      rig.rotation.set(0, 0, 0);
-      angle = 0;
-      omega = 0;
-    
-      // garante que a câmera esteja limpa
+      rig.rotation.set(0,0,0);
+      angle = 0; omega = 0;
       if (camera.rotationQuaternion) {
         camera.rotationQuaternion.copyFrom(BABYLON.Quaternion.Identity());
       }
-    
-      // só depois inicia o countdown
       startCountdownThenRun();
     });
-
 
     // ===== Menu → iniciar
     play.addEventListener('click', async () => {
@@ -342,16 +359,7 @@
       setTimeout(() => engine.resize(), 0);
       startCountdownThenRun();
     }, { passive:true });
-
-    // ===== HUD: Calibrar
-    calBtn.addEventListener('click', calibrate);
   })();
   </script>
 </body>
 </html>
-
-
-
-
-
-

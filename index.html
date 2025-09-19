@@ -127,41 +127,31 @@
 
     // ===== Corda/Viga metálica (escurecida) =====
     const beamY = 0.12; // ~pés do jogador
-    function buildBeam(){
-      const start = new BABYLON.Vector3(rig.position.x, beamY, rig.position.z);
-      const end   = cube.position.clone();
-      const dir   = end.subtract(start);
-      const length= dir.length();
-      const mid   = start.add(end).scale(0.5);
-      const mesh  = BABYLON.MeshBuilder.CreateBox('beam', { width:0.15, height:0.08, depth:length }, scene);
-      mesh.position = mid; mesh.lookAt(end);
-      const metalMat = new BABYLON.StandardMaterial('metalMat', scene);
-      metalMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/reflectivity.png', scene);
-      metalMat.diffuseColor = new BABYLON.Color3(0.25, 0.28, 0.32); // mais escuro
-      metalMat.specularColor = new BABYLON.Color3(0.08, 0.08, 0.10);
-      metalMat.specularPower = 32;
-      if (metalMat.diffuseTexture){
-        metalMat.diffuseTexture.level = 0.75;        // menos brilho
-        metalMat.diffuseTexture.uScale = Math.max(1, length / 4);
-        metalMat.diffuseTexture.vScale = 1;
-      }
-      mesh.material = metalMat;
-      return { mesh, baseDepth: length };
-    }
-    const beam = buildBeam();
+    // Âncoras FIXAS no mundo: logo abaixo do ponto inicial do jogador e logo abaixo da caixa
+    const beamStart = new BABYLON.Vector3(rig.position.x, beamY, rig.position.z);
+    const beamEnd   = new BABYLON.Vector3(cube.position.x, beamY, cube.position.z);
+    const beamDir   = beamEnd.subtract(beamStart);
+    const beamLen   = beamDir.length();
+    const beamMid   = beamStart.add(beamEnd).scale(0.5);
 
-    function updateBeam(){
-      const start = new BABYLON.Vector3(rig.position.x, beamY, rig.position.z);
-      const end   = cube.position.clone();
-      const dir   = end.subtract(start);
-      const length= dir.length();
-      const mid   = start.add(end).scale(0.5);
-      beam.mesh.position = mid;
-      beam.mesh.lookAt(end);
-      beam.mesh.scaling.z = length / beam.baseDepth;
-      const mat = beam.mesh.material;
-      if (mat && mat.diffuseTexture){ mat.diffuseTexture.uScale = Math.max(1, length/4); }
+    const beam = BABYLON.MeshBuilder.CreateBox('beam', { width:0.15, height:0.08, depth:beamLen }, scene);
+    beam.position = beamMid;
+    beam.lookAt(beamEnd); // alinha exatamente no plano horizontal
+
+    // Material metálico mais escuro
+    const metalMat = new BABYLON.StandardMaterial('metalMat', scene);
+    metalMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/reflectivity.png', scene);
+    metalMat.diffuseColor = new BABYLON.Color3(0.25, 0.28, 0.32);
+    metalMat.specularColor = new BABYLON.Color3(0.08, 0.08, 0.10);
+    metalMat.specularPower = 32;
+    if (metalMat.diffuseTexture){
+      metalMat.diffuseTexture.level = 0.75;
+      metalMat.diffuseTexture.uScale = Math.max(1, beamLen / 4);
+      metalMat.diffuseTexture.vScale = 1;
     }
+    beam.material = metalMat;
+
+    // ===== Render loop
 
     // ===== Render loop
     engine.runRenderLoop(() => scene.render());
@@ -298,7 +288,7 @@
         if (dist > 1.6){
           toCube.normalize();
           rig.position.addInPlace(toCube.scale(SPEED * dt));
-          updateBeam();
+          
         } else {
           // Chegou perto – mantém só o balanço
         }

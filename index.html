@@ -131,13 +131,12 @@
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
-    // ⚙️ Manter o depth buffer entre os grupos (0→1→2→3)
-    // Assim a lava (grupo 1) respeita a profundidade da viga (grupo 0)
+    // manter depth entre os grupos
     scene.setRenderingAutoClearDepthStencil(1, false);
     scene.setRenderingAutoClearDepthStencil(2, false);
     scene.setRenderingAutoClearDepthStencil(3, false);
 
-    // Fog global sutil pra amaciar distância (não rouba a cena)
+    // Fog global sutil
     scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
     scene.fogColor = new BABYLON.Color3(0.03, 0.025, 0.035);
     scene.fogDensity = 0.010;
@@ -193,7 +192,7 @@
       metalMat.diffuseTexture.vScale = 1;
     }
     beam.material = metalMat;
-    beam.renderingGroupId = 0; // explícito: viga no grupo 0 (mais cedo) + depth preservado
+    beam.renderingGroupId = 0;
 
     // ======== NÉVOA “VOLUMÉTRICA” POR FATIAS ========
     (function makeLayeredGroundFog(){
@@ -202,14 +201,14 @@
       const margin   = 6;
       const planeSize = roomSize - margin*2;
 
-      const height = 4.2;     // altura total do colchão de névoa
-      const slices = 12;      // nº de fatias (suba p/ 20–24 se quiser ainda mais suave)
-      const baseAlpha = 0.10; // opacidade base por camada
-      const tint = new BABYLON.Color3(1.0, 0.36, 0.10); // tom quente
+      const height = 4.2;
+      const slices = 12;
+      const baseAlpha = 0.10;
+      const tint = new BABYLON.Color3(1.0, 0.36, 0.10);
 
       const fogSlices = [];
       for (let i=0;i<slices;i++){
-        const t = i/(slices-1); // 0→base, 1→topo
+        const t = i/(slices-1);
         const y = floorY + 5 + t*height;
 
         const p = BABYLON.MeshBuilder.CreatePlane(`fogSlice${i}`, { width: planeSize, height: planeSize }, scene);
@@ -229,19 +228,16 @@
         m.opacityTexture.uScale = scale;
         m.opacityTexture.vScale = scale * (0.92 + Math.random()*0.16);
 
-        // mais brilhosa
         m.emissiveColor = tint.scale(0.45 + (1.0 - t)*0.35);
         m.alpha = baseAlpha * (1.0 - Math.pow(t, 1.35));
         m.alphaMode = BABYLON.Engine.ALPHA_COMBINE;
 
         p.material = m;
 
-        // névoa por cima (translúcida) respeitando depth do que já foi desenhado
-        m.disableDepthWrite = true; // não escreve no depth
-        p.renderingGroupId = 2;     // desenha depois da lava
-        p.alphaIndex = i;           // ordena base→topo
+        m.disableDepthWrite = true;
+        p.renderingGroupId = 2;
+        p.alphaIndex = i;
 
-        // velocidade que você escolheu
         const speedU = (0.025 + Math.random()*0.004) * (0.7 + (1.0 - t)*0.6);
         const speedV = (0.015 + Math.random()*0.003) * (0.7 + t*0.5);
         const dirU = Math.random() < 0.5 ? -1 : 1;
@@ -250,38 +246,33 @@
         fogSlices.push({mat:m, speedU: speedU*dirU, speedV: speedV*dirV});
       }
 
-      // Glow (halo) — mais forte para destacar a névoa. Obs: o brilho é pós-processo aditivo.
+      // Glow mais forte para ressaltar a névoa
       const glow = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 16 });
       glow.intensity = 0.5;
 
-      // === LAVA ANIMADA (LavaMaterial) — opaca e respeitando depth
+      // === LAVA
       (function makeLava(){
         const lava = BABYLON.MeshBuilder.CreateGround("lava", {
           width: planeSize, height: planeSize, subdivisions: 160
         }, scene);
         lava.position = new BABYLON.Vector3(0, floorY + 5.0, 0);
-        lava.renderingGroupId = 1; // desenha após a viga, mas depth é preservado
+        lava.renderingGroupId = 1;
 
         const lavaMat = new BABYLON.LavaMaterial("lavaMat", scene);
         lavaMat.noiseTexture  = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/cloud.png", scene);
         lavaMat.diffuseTexture = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/lavatile.jpg", scene);
-        lavaMat.speed = 0.06; // sutil
+        lavaMat.speed = 0.06;
         lavaMat.fogColor = new BABYLON.Color3(0.85, 0.28, 0.08);
-
-        // tiling levemente maior
         lavaMat.diffuseTexture.uScale = lavaMat.diffuseTexture.vScale = 1.6;
         lavaMat.noiseTexture.uScale   = lavaMat.noiseTexture.vScale   = 1.6;
-
-        // 👇 garantir que a lava é tratada como opaca
         lavaMat.alpha = 1.0;
         lavaMat.alphaMode = BABYLON.Engine.ALPHA_DISABLE;
-        lavaMat.disableDepthWrite = false;   // escreve no depth
-        lavaMat.needDepthPrePass = false;    // desnecessário aqui
+        lavaMat.disableDepthWrite = false;
 
         lava.material = lavaMat;
       })();
 
-      // === BRASAS/FAÍSCAS DE CALOR (GPUParticleSystem)
+      // === BRASAS/FAÍSCAS (AGORA SOBEM + MAIS BRILHO + FADE SUAVE)
       (function makeHeatSpecks(){
         const cap = 2500;
         const ps = (BABYLON.GPUParticleSystem && BABYLON.GPUParticleSystem.IsSupported)
@@ -295,19 +286,34 @@
         ps.minEmitBox = new BABYLON.Vector3(-half, 0, -half);
         ps.maxEmitBox = new BABYLON.Vector3( half, 0,  half);
 
-        ps.color1 = new BABYLON.Color4(1.0, 0.95, 0.85, 0.95);
-        ps.color2 = new BABYLON.Color4(1.0, 0.30, 0.05, 0.85);
-        ps.colorDead = new BABYLON.Color4(1, 0.2, 0.0, 0.0);
+        // --> BRILHO: usamos gradiente de cor/alpha ao longo da vida
+        ps.addColorGradient(0.00, new BABYLON.Color4(1.00, 0.98, 0.92, 1.00)); // início bem claro
+        ps.addColorGradient(0.35, new BABYLON.Color4(1.00, 0.78, 0.40, 0.85));
+        ps.addColorGradient(0.70, new BABYLON.Color4(1.00, 0.45, 0.12, 0.45));
+        ps.addColorGradient(1.00, new BABYLON.Color4(1.00, 0.25, 0.05, 0.00)); // some suave
 
-        ps.minSize = 0.06; ps.maxSize = 0.14;
-        ps.minLifeTime = 1.2; ps.maxLifeTime = 2.6;
+        ps.minSize = 0.08; ps.maxSize = 0.16;
+
+        // --> SOBEM mais e duram mais
+        ps.minLifeTime = 2.8; 
+        ps.maxLifeTime = 5.2;
+
+        // densidade igual
         ps.emitRate = 120;
 
-        ps.direction1 = new BABYLON.Vector3(-0.10,  0.35, -0.10);
-        ps.direction2 = new BABYLON.Vector3( 0.10,  0.55,  0.10);
-        ps.gravity = new BABYLON.Vector3(0, -0.05, 0);
+        // --> Direção com Y alto (sobe). Um pouco de jitter em X/Z para parecer calor.
+        ps.direction1 = new BABYLON.Vector3(-0.05, 1.2, -0.05);
+        ps.direction2 = new BABYLON.Vector3( 0.05, 2.2,  0.05);
+
+        // --> Sem “gravidade para baixo”; deixa subir e perder força naturalmente
+        ps.gravity = new BABYLON.Vector3(0, 0.0, 0);
+
         ps.minAngularSpeed = -0.8; ps.maxAngularSpeed = 0.8;
-        ps.minEmitPower = 0.15; ps.maxEmitPower = 0.35;
+
+        // --> Um pouco mais de potência inicial para ganhar altura
+        ps.minEmitPower = 0.35; 
+        ps.maxEmitPower = 0.8;
+
         ps.updateSpeed = 0.008;
         ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
 
@@ -492,7 +498,3 @@
   </script>
 </body>
 </html>
-
-
-
-

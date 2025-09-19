@@ -11,15 +11,17 @@
     body{ height:100dvh; }
     canvas{ width:100vw; height:100dvh; display:block; touch-action:none; }
 
-    /* ===== Overlay de Menu ===== */
-    #menu{ position:fixed; inset:0; display:grid; place-items:center; z-index:3;
+    /* ===== Overlay base ===== */
+    #menu, #gameover{
+      position:fixed; inset:0; display:grid; place-items:center; z-index:3;
       background:
         linear-gradient(180deg, rgba(0,16,33,.66), rgba(0,0,0,.68)),
         radial-gradient(700px 500px at 50% 18%, rgba(11,42,107,.22), rgba(0,0,0,0) 60%);
       -webkit-backdrop-filter: blur(4px) saturate(1.05);
       backdrop-filter: blur(4px) saturate(1.05);
-      transition: opacity .45s ease, visibility .45s ease; }
-    #menu.hide{ opacity:0; visibility:hidden; }
+      transition: opacity .6s ease, visibility .6s ease;
+    }
+    #menu.hide, #gameover.hide{ opacity:0; visibility:hidden; }
 
     .panel{ padding:28px 28px 22px; border-radius:18px; width:min(92vw, 520px);
       background: linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,.22));
@@ -51,6 +53,14 @@
     @media (orientation: landscape){
       .hud{ padding-left: calc(env(safe-area-inset-left,0px) + 18px); padding-right: calc(env(safe-area-inset-right,0px) + 18px); }
     }
+
+    /* ===== Game Over mais escuro ===== */
+    #gameover{
+      z-index:4;
+      background:
+        linear-gradient(180deg, rgba(0,0,0,.88), rgba(0,0,0,.92)),
+        radial-gradient(700px 500px at 50% 18%, rgba(11,42,107,.22), rgba(0,0,0,0) 60%);
+    }
   </style>
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
 </head>
@@ -64,6 +74,15 @@
       <p>Pronto para mobile e desktop. Em celulares, o <b>giroscópio</b> liga automaticamente.</p>
       <button id="play" class="btn" aria-label="Jogar">Jogar</button>
       <div class="footer" style="margin-top:12px; font-size:12px; opacity:.55;">Dica: use <b>Calibrar</b> para alinhar o olhar.</div>
+    </div>
+  </div>
+
+  <!-- GAME OVER -->
+  <div id="gameover" aria-modal="true" role="dialog" class="hide">
+    <div class="panel" aria-label="Tela de Game Over">
+      <h1>Game Over</h1>
+      <p>Você perdeu o equilíbrio.</p>
+      <button id="restart" class="btn" aria-label="Reiniciar">Reiniciar</button>
     </div>
   </div>
 
@@ -89,8 +108,10 @@
     const hud    = document.getElementById('hud');
     const calBtn = document.getElementById('calBtn');
     const orientBadge = document.getElementById('orientBadge');
+    const gameover = document.getElementById('gameover');
+    const restart  = document.getElementById('restart');
 
-    // Detecção simples de mobile (UA + touch points)
+    // Detecção simples de mobile
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && screen.width < 1025);
 
     const engine = new BABYLON.Engine(canvas, true);
@@ -100,13 +121,12 @@
     // ===== Cena base =====
     let camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 1.2, 38), scene);
     camera.attachControl(canvas, true);
-    camera.speed = 0; // sem WASD
+    camera.speed = 0;
     camera.keysUp = camera.keysDown = camera.keysLeft = camera.keysRight = [];
 
-    // Player rig (pai da câmera) p/ balanço e movimento sem mover a câmera de lugar
     const rig = new BABYLON.TransformNode('playerRig', scene);
     rig.position.copyFrom(camera.position);
-    camera.parent = rig; // câmera passa a ser local ao rig
+    camera.parent = rig;
     camera.position.set(0,0,0);
 
     const light = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0,1,0), scene);
@@ -125,22 +145,19 @@
     crateMat.specularColor = new BABYLON.Color3(0.1,0.1,0.1);
     cube.material = crateMat;
 
-    // ===== Corda/Viga metálica (escurecida) =====
-    const beamY = 0.12;       // altura do início
-    const endOffsetY = -0.65;   // ajuste manual (+ para subir, - para descer)
-    
+    // ===== Corda/Viga metálica =====
+    const beamY = 0.12;
+    const endOffsetY = -0.65; // ajuste manual
     const beamStart = new BABYLON.Vector3(rig.position.x, beamY, rig.position.z);
     const beamEnd   = new BABYLON.Vector3(cube.position.x, beamY + endOffsetY, cube.position.z);
-
     const beamDir   = beamEnd.subtract(beamStart);
     const beamLen   = beamDir.length();
     const beamMid   = beamStart.add(beamEnd).scale(0.5);
 
     const beam = BABYLON.MeshBuilder.CreateBox('beam', { width:0.15, height:0.08, depth:beamLen }, scene);
     beam.position = beamMid;
-    beam.lookAt(beamEnd); // alinha exatamente no plano horizontal
+    beam.lookAt(beamEnd);
 
-    // Material metálico mais escuro
     const metalMat = new BABYLON.StandardMaterial('metalMat', scene);
     metalMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/reflectivity.png', scene);
     metalMat.diffuseColor = new BABYLON.Color3(0.25, 0.28, 0.32);
@@ -153,9 +170,6 @@
     }
     beam.material = metalMat;
 
-    // ===== Render loop
-
-    // ===== Render loop
     engine.runRenderLoop(() => scene.render());
     window.addEventListener('resize', () => engine.resize());
 
@@ -167,8 +181,8 @@
     refreshOrientationBadge();
     window.matchMedia('(orientation: landscape)').addEventListener?.('change', refreshOrientationBadge);
 
-    // ===== Giroscópio: auto no mobile (+90° apenas no mobile)
-    let yawOffset = (isMobile ? Math.PI / 2 : 0), pitchOffset = 0, rollOffset = 0; // offsets de calibração
+    // ===== Giroscópio
+    let yawOffset = (isMobile ? Math.PI / 2 : 0), pitchOffset = 0, rollOffset = 0;
 
     async function requestMotionPermission(){
       try{
@@ -178,25 +192,21 @@
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
           const r2 = await DeviceOrientationEvent.requestPermission(); if (r2 !== 'granted') return false;
         }
-      }catch(_){ /* ignore */ }
+      }catch(_){ }
       return true;
     }
 
     function swapToDeviceOrientationCamera(){
-      // guarda FOV/planos; mantém posição no RIG
       const fov = camera.fov, minZ = camera.minZ, maxZ = camera.maxZ;
       const devcam = new BABYLON.DeviceOrientationCamera('devcam', BABYLON.Vector3.Zero(), scene);
       devcam.fov = fov; devcam.minZ = minZ; devcam.maxZ = maxZ;
       devcam.attachControl(canvas, true);
       devcam._disablePointerInputWhenUsingDeviceOrientation = false;
-
-      // parent no rig e zera posição local
       devcam.parent = rig; devcam.position.set(0,0,0);
 
       scene.activeCamera = devcam;
       camera.detachControl(canvas); camera.dispose(); camera = devcam;
 
-      // Aplica offsets após inputs para manter +90° inicial no mobile
       camera.onAfterCheckInputsObservable.clear();
       camera.onAfterCheckInputsObservable.add(() => {
         const q = camera.rotationQuaternion; if (!q) return;
@@ -214,13 +224,13 @@
     function calibrate(){
       if (!camera.rotationQuaternion) return;
       const e = camera.rotationQuaternion.toEulerAngles();
-      yawOffset   += -e.y; // acumula offsets sem teleporte
+      yawOffset   += -e.y;
       pitchOffset += -e.x;
       rollOffset   = 0;
     }
 
-    // ===== Input PC: A/D para compensar =====
-    let keyTarget = 0, keyInput = 0; // suavizado
+    // ===== Input PC
+    let keyTarget = 0, keyInput = 0;
     window.addEventListener('keydown', (e)=>{
       if (e.code === 'KeyA') keyTarget = -1; else if (e.code === 'KeyD') keyTarget = 1;
     });
@@ -228,7 +238,7 @@
       if ((e.code === 'KeyA' && keyTarget === -1) || (e.code === 'KeyD' && keyTarget === 1)) keyTarget = 0;
     });
 
-    // ===== Contador 3D (sobre a caixa) =====
+    // ===== Contador
     function startCountdownThenRun(){
       gameState = 'countdown';
       const plane = BABYLON.MeshBuilder.CreatePlane('countPlane', { size: 1.4 }, scene);
@@ -252,52 +262,65 @@
       }, 1000);
     }
 
-    // ===== Mecânica de equilíbrio (pêndulo invertido simplificado) =====
+    // ===== Mecânica de equilíbrio
     let gameState = 'menu';
-    let angle = 0, omega = 0; // rotação lateral do rig (rad) e velocidade angular
-    const K_GRAV = 1.6, K_DAMP = 1.1, K_INPUT = 2.0, K_RESIST = 1.2; // constantes simples
-    const MAX_ROLL_FOR_INPUT = 0.6; // ~34° – saturação do input do celular
-    const FALL_LIMIT = 0.9;         // ~52° – limite antes de cair (por ora só clamp)
-    const SPEED = 2.0;              // avanço m/s em direção à caixa
+    let angle = 0, omega = 0;
+    const K_GRAV = 1.6, K_DAMP = 1.1, K_INPUT = 2.0, K_RESIST = 1.2;
+    const MAX_ROLL_FOR_INPUT = 0.6;
+    const FALL_LIMIT = 0.9;
+    const GAME_OVER_LIMIT = 0.8;
+    const SPEED = 2.0;
 
     engine.runRenderLoop(()=>{
       const dt = engine.getDeltaTime() / 1000;
-
-      // Suaviza teclado
       keyInput += (keyTarget - keyInput) * Math.min(1, dt*8);
 
       if (gameState === 'running'){
-        // ===== Entrada do jogador
-        let userInput = keyInput; // PC
+        let userInput = keyInput;
         if (isMobile && camera.rotationQuaternion){
           const e = camera.rotationQuaternion.toEulerAngles();
-          const phoneRoll = e.z; // rotação em torno do eixo de visão
+          const phoneRoll = e.z;
           const norm = Math.max(-1, Math.min(1, phoneRoll / MAX_ROLL_FOR_INPUT));
-          userInput = -norm; // inclinar para o lado oposto corrige
+          userInput = -norm;
         }
         const effective = userInput / (1 + K_RESIST * Math.abs(angle));
 
-        // ===== Dinâmica do equilíbrio (tipo pêndulo invertido simples)
         const acc = K_GRAV * Math.sin(angle) - K_DAMP * omega - K_INPUT * effective;
         omega += acc * dt;
         angle += omega * dt;
-        angle = Math.max(-FALL_LIMIT, Math.min(FALL_LIMIT, angle));
         rig.rotation.z = angle;
 
-        // ===== Avanço em direção à caixa
+        // GAME OVER CHECK
+        if (Math.abs(angle) >= GAME_OVER_LIMIT){
+          triggerGameOver();
+          return;
+        }
+
         const toCube = cube.position.subtract(rig.position);
         const dist = toCube.length();
         if (dist > 1.6){
           toCube.normalize();
           rig.position.addInPlace(toCube.scale(SPEED * dt));
-          
-        } else {
-          // Chegou perto – mantém só o balanço
         }
       }
     });
 
-    // ===== Menu → iniciar =====
+    // ===== Game Over
+    function triggerGameOver(){
+      gameState = 'gameover';
+      hud.setAttribute('aria-hidden','true');
+      gameover.classList.remove('hide');
+    }
+
+    restart.addEventListener('click', () => {
+      gameover.classList.add('hide');
+      hud.setAttribute('aria-hidden','false');
+      rig.position.copyFrom(new BABYLON.Vector3(0, 1.2, 38));
+      angle = 0; omega = 0;
+      startCountdownThenRun();
+    });
+
+    // ===== Menu → iniciar
     play.addEventListener('click', async () => {
       menu.classList.add('hide');
       hud.setAttribute('aria-hidden','false');
@@ -306,14 +329,9 @@
       startCountdownThenRun();
     }, { passive:true });
 
-    // ===== HUD: Calibrar =====
+    // ===== HUD: Calibrar
     calBtn.addEventListener('click', calibrate);
   })();
   </script>
 </body>
 </html>
-
-
-
-
-

@@ -4,10 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#000000" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <title>FPS 3D — Menu + HUD (Mobile Gyro Auto)</title>
+  <title>FPS 3D — Protótipo (Menu + HUD + Gyro + Corda + Balance)</title>
   <style>
     :root{ --navy:#0b2a6b; --navy2:#001021; --fg:#e6ebf5; }
     html,body{ height:100%; margin:0; background:#000; color:var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
@@ -66,7 +63,7 @@
       <h1>FPS 3D • Protótipo</h1>
       <p>Pronto para mobile e desktop. Em celulares, o <b>giroscópio</b> liga automaticamente.</p>
       <button id="play" class="btn" aria-label="Jogar">Jogar</button>
-      <div class="footer" style="margin-top:12px; font-size:12px; opacity:.55;">Dica: use o botão Calibrar na HUD para alinhar o olhar.</div>
+      <div class="footer" style="margin-top:12px; font-size:12px; opacity:.55;">Dica: use <b>Calibrar</b> para alinhar o olhar.</div>
     </div>
   </div>
 
@@ -96,23 +93,7 @@
     // Detecção simples de mobile (UA + touch points)
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && screen.width < 1025);
 
-    // ===== Fullscreen (mobile): tentativa no load + garantia no primeiro toque =====
-    async function enterFullscreen(){
-      try{
-        const el = document.documentElement;
-        if (!document.fullscreenElement && el.requestFullscreen){
-          await el.requestFullscreen({ navigationUI: 'hide' }).catch(()=>{});
-        }
-      }catch(_){}
-    }
-    if (isMobile){
-      // tentativa imediata (pode ser bloqueada por política de gesto do usuário)
-      setTimeout(()=>enterFullscreen(),0);
-      // primeira interação de toque: garantir fullscreen
-      const goFS = ()=>{ enterFullscreen(); document.removeEventListener('touchstart', goFS); };
-      document.addEventListener('touchstart', goFS, { passive:true, once:true });
-    }
-const engine = new BABYLON.Engine(canvas, true);
+    const engine = new BABYLON.Engine(canvas, true);
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
@@ -121,6 +102,12 @@ const engine = new BABYLON.Engine(canvas, true);
     camera.attachControl(canvas, true);
     camera.speed = 0; // sem WASD
     camera.keysUp = camera.keysDown = camera.keysLeft = camera.keysRight = [];
+
+    // Player rig (pai da câmera) p/ balanço e movimento sem mover a câmera de lugar
+    const rig = new BABYLON.TransformNode('playerRig', scene);
+    rig.position.copyFrom(camera.position);
+    camera.parent = rig; // câmera passa a ser local ao rig
+    camera.position.set(0,0,0);
 
     const light = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0,1,0), scene);
     light.intensity = 0.9;
@@ -138,30 +125,43 @@ const engine = new BABYLON.Engine(canvas, true);
     crateMat.specularColor = new BABYLON.Color3(0.1,0.1,0.1);
     cube.material = crateMat;
 
-    // ===== "Corda" (viga metálica) do player até a caixa =====
-    // Ponto inicial: um pouco abaixo da câmera
-    const beamYStart = 0.12; // altura ~pés do jogador (levemente acima do piso)
-    const start = new BABYLON.Vector3(camera.position.x, beamYStart, camera.position.z);
-    const end   = cube.position.clone();
-    const dir   = end.subtract(start);
-    const length= dir.length();
-    const mid   = start.add(end).scale(0.5);
-
-    // Box along Z (profundidade = length), alinhado ao alvo
-    const beam = BABYLON.MeshBuilder.CreateBox('beam', { width: 0.15, height: 0.08, depth: length }, scene);
-    beam.position = mid;
-    beam.lookAt(end); // orienta o eixo +Z do box na direção da caixa
-
-    // Material metálico simples com textura do Playground
-    const metalMat = new BABYLON.StandardMaterial('metalMat', scene);
-    metalMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/reflectivity.png', scene);
-    metalMat.specularColor = new BABYLON.Color3(0.6, 0.6, 0.7);
-    metalMat.specularPower = 64;
-    if (metalMat.diffuseTexture) {
-      metalMat.diffuseTexture.uScale = Math.max(1, length / 4); // repete ao longo do comprimento
-      metalMat.diffuseTexture.vScale = 1;
+    // ===== Corda/Viga metálica (escurecida) =====
+    const beamY = 0.12; // ~pés do jogador
+    function buildBeam(){
+      const start = new BABYLON.Vector3(rig.position.x, beamY, rig.position.z);
+      const end   = cube.position.clone();
+      const dir   = end.subtract(start);
+      const length= dir.length();
+      const mid   = start.add(end).scale(0.5);
+      const mesh  = BABYLON.MeshBuilder.CreateBox('beam', { width:0.15, height:0.08, depth:length }, scene);
+      mesh.position = mid; mesh.lookAt(end);
+      const metalMat = new BABYLON.StandardMaterial('metalMat', scene);
+      metalMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/reflectivity.png', scene);
+      metalMat.diffuseColor = new BABYLON.Color3(0.25, 0.28, 0.32); // mais escuro
+      metalMat.specularColor = new BABYLON.Color3(0.08, 0.08, 0.10);
+      metalMat.specularPower = 32;
+      if (metalMat.diffuseTexture){
+        metalMat.diffuseTexture.level = 0.75;        // menos brilho
+        metalMat.diffuseTexture.uScale = Math.max(1, length / 4);
+        metalMat.diffuseTexture.vScale = 1;
+      }
+      mesh.material = metalMat;
+      return { mesh, baseDepth: length };
     }
-    beam.material = metalMat;
+    const beam = buildBeam();
+
+    function updateBeam(){
+      const start = new BABYLON.Vector3(rig.position.x, beamY, rig.position.z);
+      const end   = cube.position.clone();
+      const dir   = end.subtract(start);
+      const length= dir.length();
+      const mid   = start.add(end).scale(0.5);
+      beam.mesh.position = mid;
+      beam.mesh.lookAt(end);
+      beam.mesh.scaling.z = length / beam.baseDepth;
+      const mat = beam.mesh.material;
+      if (mat && mat.diffuseTexture){ mat.diffuseTexture.uScale = Math.max(1, length/4); }
+    }
 
     // ===== Render loop
     engine.runRenderLoop(() => scene.render());
@@ -175,37 +175,37 @@ const engine = new BABYLON.Engine(canvas, true);
     refreshOrientationBadge();
     window.matchMedia('(orientation: landscape)').addEventListener?.('change', refreshOrientationBadge);
 
-    // ===== Giroscópio: auto no mobile
-    let yawOffset = (isMobile ? Math.PI / 2 : 0), pitchOffset = 0, rollOffset = 0; // +90° apenas no mobile
+    // ===== Giroscópio: auto no mobile (+90° apenas no mobile)
+    let yawOffset = (isMobile ? Math.PI / 2 : 0), pitchOffset = 0, rollOffset = 0; // offsets de calibração
 
     async function requestMotionPermission(){
       try{
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
-          const r = await DeviceMotionEvent.requestPermission();
-          if (r !== 'granted') return false;
+          const r = await DeviceMotionEvent.requestPermission(); if (r !== 'granted') return false;
         }
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
-          const r2 = await DeviceOrientationEvent.requestPermission();
-          if (r2 !== 'granted') return false;
+          const r2 = await DeviceOrientationEvent.requestPermission(); if (r2 !== 'granted') return false;
         }
       }catch(_){ /* ignore */ }
       return true;
     }
 
     function swapToDeviceOrientationCamera(){
-      const pos = camera.position.clone();
-      const fov = camera.fov; const minZ = camera.minZ; const maxZ = camera.maxZ;
-      const newCam = new BABYLON.DeviceOrientationCamera('devcam', pos, scene);
-      newCam.fov = fov; newCam.minZ = minZ; newCam.maxZ = maxZ;
-      newCam.attachControl(canvas, true);
-      // Habilitar também toque enquanto usa orientação do dispositivo
-      newCam._disablePointerInputWhenUsingDeviceOrientation = false;
-      scene.activeCamera = newCam;
-      camera.detachControl(canvas);
-      camera.dispose();
-      camera = newCam;
+      // guarda FOV/planos; mantém posição no RIG
+      const fov = camera.fov, minZ = camera.minZ, maxZ = camera.maxZ;
+      const devcam = new BABYLON.DeviceOrientationCamera('devcam', BABYLON.Vector3.Zero(), scene);
+      devcam.fov = fov; devcam.minZ = minZ; devcam.maxZ = maxZ;
+      devcam.attachControl(canvas, true);
+      devcam._disablePointerInputWhenUsingDeviceOrientation = false;
 
-      // Aplicar offsets de calibração sem mover posição — após os inputs do dispositivo
+      // parent no rig e zera posição local
+      devcam.parent = rig; devcam.position.set(0,0,0);
+
+      scene.activeCamera = devcam;
+      camera.detachControl(canvas); camera.dispose(); camera = devcam;
+
+      // Aplica offsets após inputs para manter +90° inicial no mobile
+      camera.onAfterCheckInputsObservable.clear();
       camera.onAfterCheckInputsObservable.add(() => {
         const q = camera.rotationQuaternion; if (!q) return;
         const adjust = BABYLON.Quaternion.FromEulerAngles(pitchOffset, yawOffset, rollOffset);
@@ -215,32 +215,103 @@ const engine = new BABYLON.Engine(canvas, true);
     }
 
     async function enableGyroAuto(){
-      const ok = await requestMotionPermission();
-      if (!ok) return;
+      const ok = await requestMotionPermission(); if (!ok) return;
       swapToDeviceOrientationCamera();
     }
 
     function calibrate(){
-      // Zera yaw/pitch atuais sem alterar a posição — evita "teleporte".
       if (!camera.rotationQuaternion) return;
       const e = camera.rotationQuaternion.toEulerAngles();
-      // Tornar a orientação atual o novo "zero":
-      yawOffset   = -e.y;  // compensa heading
-      pitchOffset = -e.x;  // compensa inclinação
-      rollOffset  = 0;     // evita rolagem lateral
+      yawOffset   += -e.y; // acumula offsets sem teleporte
+      pitchOffset += -e.x;
+      rollOffset   = 0;
     }
+
+    // ===== Input PC: A/D para compensar =====
+    let keyTarget = 0, keyInput = 0; // suavizado
+    window.addEventListener('keydown', (e)=>{
+      if (e.code === 'KeyA') keyTarget = -1; else if (e.code === 'KeyD') keyTarget = 1;
+    });
+    window.addEventListener('keyup', (e)=>{
+      if ((e.code === 'KeyA' && keyTarget === -1) || (e.code === 'KeyD' && keyTarget === 1)) keyTarget = 0;
+    });
+
+    // ===== Contador 3D (sobre a caixa) =====
+    function startCountdownThenRun(){
+      gameState = 'countdown';
+      const plane = BABYLON.MeshBuilder.CreatePlane('countPlane', { size: 1.4 }, scene);
+      plane.position = cube.position.add(new BABYLON.Vector3(0, 1.6, 0));
+      plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+      const dt = new BABYLON.DynamicTexture('countDT', {width:512, height:512}, scene, true);
+      const mat = new BABYLON.StandardMaterial('countMat', scene);
+      mat.diffuseTexture = dt; mat.emissiveColor = new BABYLON.Color3(0.92,0.96,1.0); mat.specularColor = new BABYLON.Color3(0,0,0); mat.backFaceCulling = false;
+      plane.material = mat;
+      const draw = (n)=>{
+        const ctx = dt.getContext(); const s = dt.getSize();
+        ctx.clearRect(0,0,s.width,s.height);
+        ctx.fillStyle = '#e6ebf5'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.font = 'bold 340px system-ui,Segoe UI,Arial';
+        ctx.fillText(String(n), s.width/2, s.height/2);
+        dt.update();
+      };
+      let n = 3; draw(n);
+      const id = setInterval(()=>{
+        n--; if (n>0){ draw(n); } else { clearInterval(id); plane.dispose(); gameState='running'; }
+      }, 1000);
+    }
+
+    // ===== Mecânica de equilíbrio (pêndulo invertido simplificado) =====
+    let gameState = 'menu';
+    let angle = 0, omega = 0; // rotação lateral do rig (rad) e velocidade angular
+    const K_GRAV = 1.6, K_DAMP = 1.1, K_INPUT = 2.0, K_RESIST = 1.2; // constantes simples
+    const MAX_ROLL_FOR_INPUT = 0.6; // ~34° – saturação do input do celular
+    const FALL_LIMIT = 0.9;         // ~52° – limite antes de cair (por ora só clamp)
+    const SPEED = 2.0;              // avanço m/s em direção à caixa
+
+    engine.runRenderLoop(()=>{
+      const dt = engine.getDeltaTime() / 1000;
+
+      // Suaviza teclado
+      keyInput += (keyTarget - keyInput) * Math.min(1, dt*8);
+
+      if (gameState === 'running'){
+        // ===== Entrada do jogador
+        let userInput = keyInput; // PC
+        if (isMobile && camera.rotationQuaternion){
+          const e = camera.rotationQuaternion.toEulerAngles();
+          const phoneRoll = e.z; // rotação em torno do eixo de visão
+          const norm = Math.max(-1, Math.min(1, phoneRoll / MAX_ROLL_FOR_INPUT));
+          userInput = -norm; // inclinar para o lado oposto corrige
+        }
+        const effective = userInput / (1 + K_RESIST * Math.abs(angle));
+
+        // ===== Dinâmica do equilíbrio (tipo pêndulo invertido simples)
+        const acc = K_GRAV * Math.sin(angle) - K_DAMP * omega - K_INPUT * effective;
+        omega += acc * dt;
+        angle += omega * dt;
+        angle = Math.max(-FALL_LIMIT, Math.min(FALL_LIMIT, angle));
+        rig.rotation.z = angle;
+
+        // ===== Avanço em direção à caixa
+        const toCube = cube.position.subtract(rig.position);
+        const dist = toCube.length();
+        if (dist > 1.6){
+          toCube.normalize();
+          rig.position.addInPlace(toCube.scale(SPEED * dt));
+          updateBeam();
+        } else {
+          // Chegou perto – mantém só o balanço
+        }
+      }
+    });
 
     // ===== Menu → iniciar =====
     play.addEventListener('click', async () => {
       menu.classList.add('hide');
       hud.setAttribute('aria-hidden','false');
-      if (isMobile) {
-        await enterFullscreen();
-        await enableGyroAuto();
-      } else {
-        canvas.requestPointerLock?.();
-      }
+      if (isMobile) { await enableGyroAuto(); } else { canvas.requestPointerLock?.(); }
       setTimeout(() => engine.resize(), 0);
+      startCountdownThenRun();
     }, { passive:true });
 
     // ===== HUD: Calibrar =====

@@ -135,7 +135,7 @@
     const fullLen = dirH.length();
     const trimmedLen = Math.max(0.1, fullLen - BEAM_CLEARANCE);
     const dirN = dirH.normalize();
-    const beamEnd = beamStart.add(dirN.scale(trimmedLen));
+    beamEnd = beamStart.add(dirN.scale(trimmedLen));
     const beamMid = beamStart.add(beamEnd).scale(0.5);
 
     const beam = BABYLON.MeshBuilder.CreateBox('beam', { width:0.15, height:0.08, depth: trimmedLen }, scene);
@@ -225,3 +225,4 @@
   </script>
 </body>
 </html>
+

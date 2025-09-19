@@ -45,7 +45,6 @@
     .hud .left,.hud .right{ display:flex; align-items:center; gap:10px; }
     .hud .badge{ pointer-events:none; opacity:.75; font-weight:700; font-size:12px; padding:6px 8px; border-radius:10px;
       background: rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.08); }
-
     @media (orientation: landscape){
       .hud{ padding-left: calc(env(safe-area-inset-left,0px) + 18px); padding-right: calc(env(safe-area-inset-right,0px) + 18px); }
     }
@@ -124,10 +123,12 @@
     const restart  = document.getElementById('restart');
     const needle = document.querySelector('#balanceMeter .needle');
 
-    // Detecção simples de mobile
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && screen.width < 1025);
 
-    const engine = new BABYLON.Engine(canvas, true);
+    // Engine + leve downscale em telas pequenas (reduz fill-rate) — ajustável
+    const engine = new BABYLON.Engine(canvas, true, { stencil:false });
+    engine.setHardwareScalingLevel(isMobile ? 1.25 : 1.0); // 1.25 ≈ 80% da resolução para a cena. :contentReference[oaicite:4]{index=4}
+
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
@@ -135,6 +136,9 @@
     scene.setRenderingAutoClearDepthStencil(1, false);
     scene.setRenderingAutoClearDepthStencil(2, false);
     scene.setRenderingAutoClearDepthStencil(3, false);
+
+    // menos trabalho com picking
+    scene.skipPointerMovePicking = true;
 
     // Fog global sutil
     scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
@@ -160,6 +164,8 @@
     roomMat.diffuseColor = new BABYLON.Color3(0.06, 0.07, 0.10);
     roomMat.specularColor = new BABYLON.Color3(0, 0, 0);
     room.material = roomMat;
+    room.isPickable = false;
+    room.freezeWorldMatrix(); // estático
 
     const cube = BABYLON.MeshBuilder.CreateBox('cube', { size: 1 }, scene);
     cube.position = new BABYLON.Vector3(0, 0.5, -30);
@@ -167,6 +173,8 @@
     crateMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/crate.png', scene);
     crateMat.specularColor = new BABYLON.Color3(0.1,0.1,0.1);
     cube.material = crateMat;
+    cube.isPickable = false;
+    cube.freezeWorldMatrix();
 
     // ===== Viga =====
     const beamY = 0.12;
@@ -193,6 +201,8 @@
     }
     beam.material = metalMat;
     beam.renderingGroupId = 0;
+    beam.isPickable = false;
+    beam.freezeWorldMatrix(); // estático
 
     // ======== NÉVOA “VOLUMÉTRICA” POR FATIAS ========
     (function makeLayeredGroundFog(){
@@ -214,7 +224,6 @@
         const p = BABYLON.MeshBuilder.CreatePlane(`fogSlice${i}`, { width: planeSize, height: planeSize }, scene);
         p.position = new BABYLON.Vector3(0, y, 0);
         p.rotation.x = Math.PI/2;
-        p.alwaysSelectAsActiveMesh = true;
 
         const m = new BABYLON.StandardMaterial(`fogMat${i}`, scene);
         m.disableLighting = true;
@@ -238,6 +247,11 @@
         p.renderingGroupId = 2;
         p.alphaIndex = i;
 
+        // sem picking + matriz fixa (menos CPU)
+        p.isPickable = false;
+        p.freezeWorldMatrix();
+
+        // animação da textura (brisa)
         const speedU = (0.025 + Math.random()*0.004) * (0.7 + (1.0 - t)*0.6);
         const speedV = (0.015 + Math.random()*0.003) * (0.7 + t*0.5);
         const dirU = Math.random() < 0.5 ? -1 : 1;
@@ -246,17 +260,19 @@
         fogSlices.push({mat:m, speedU: speedU*dirU, speedV: speedV*dirV});
       }
 
-      // Glow mais forte para ressaltar a névoa
-      const glow = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 16 });
+      // Glow mais barato (renderiza em meia resolução) :contentReference[oaicite:5]{index=5}
+      const glow = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 10, mainTextureRatio: 0.5 });
       glow.intensity = 0.5;
 
-      // === LAVA
+      // === LAVA (subdivisions reduzido; material não deforma vértices)
       (function makeLava(){
         const lava = BABYLON.MeshBuilder.CreateGround("lava", {
-          width: planeSize, height: planeSize, subdivisions: 160
+          width: planeSize, height: planeSize, subdivisions: 64
         }, scene);
         lava.position = new BABYLON.Vector3(0, floorY + 5.0, 0);
         lava.renderingGroupId = 1;
+        lava.isPickable = false;
+        lava.freezeWorldMatrix();
 
         const lavaMat = new BABYLON.LavaMaterial("lavaMat", scene);
         lavaMat.noiseTexture  = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/cloud.png", scene);
@@ -272,9 +288,9 @@
         lava.material = lavaMat;
       })();
 
-      // === BRASAS/FAÍSCAS (AGORA SOBEM + MAIS BRILHO + FADE SUAVE)
+      // === BRASAS/FAÍSCAS (sobem + brilho + fade)
       (function makeHeatSpecks(){
-        const cap = 2500;
+        const cap = 1800; // capacidade um pouco menor (GPU), aspecto mantido
         const ps = (BABYLON.GPUParticleSystem && BABYLON.GPUParticleSystem.IsSupported)
           ? new BABYLON.GPUParticleSystem("embers", { capacity: cap }, scene)
           : new BABYLON.ParticleSystem("embers", cap, scene);
@@ -286,55 +302,51 @@
         ps.minEmitBox = new BABYLON.Vector3(-half, 0, -half);
         ps.maxEmitBox = new BABYLON.Vector3( half, 0,  half);
 
-        // --> BRILHO: usamos gradiente de cor/alpha ao longo da vida
-        ps.addColorGradient(0.00, new BABYLON.Color4(1.00, 0.98, 0.92, 1.00)); // início bem claro
+        ps.addColorGradient(0.00, new BABYLON.Color4(1.00, 0.98, 0.92, 1.00));
         ps.addColorGradient(0.35, new BABYLON.Color4(1.00, 0.78, 0.40, 0.85));
         ps.addColorGradient(0.70, new BABYLON.Color4(1.00, 0.45, 0.12, 0.45));
-        ps.addColorGradient(1.00, new BABYLON.Color4(1.00, 0.25, 0.05, 0.00)); // some suave
+        ps.addColorGradient(1.00, new BABYLON.Color4(1.00, 0.25, 0.05, 0.00));
 
         ps.minSize = 0.08; ps.maxSize = 0.16;
-
-        // --> SOBEM mais e duram mais
-        ps.minLifeTime = 2.8; 
-        ps.maxLifeTime = 5.2;
-
-        // densidade igual
+        ps.minLifeTime = 2.8; ps.maxLifeTime = 5.2;
         ps.emitRate = 120;
 
-        // --> Direção com Y alto (sobe). Um pouco de jitter em X/Z para parecer calor.
         ps.direction1 = new BABYLON.Vector3(-0.05, 1.2, -0.05);
         ps.direction2 = new BABYLON.Vector3( 0.05, 2.2,  0.05);
-
-        // --> Sem “gravidade para baixo”; deixa subir e perder força naturalmente
         ps.gravity = new BABYLON.Vector3(0, 0.0, 0);
 
         ps.minAngularSpeed = -0.8; ps.maxAngularSpeed = 0.8;
+        ps.minEmitPower = 0.35; ps.maxEmitPower = 0.8;
 
-        // --> Um pouco mais de potência inicial para ganhar altura
-        ps.minEmitPower = 0.35; 
-        ps.maxEmitPower = 0.8;
-
-        ps.updateSpeed = 0.008;
+        ps.updateSpeed = 0.010; // ligeiramente maior = menos passos de simulação por frame
         ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
 
-        ps.renderingGroupId = 3; // por último
+        ps.renderingGroupId = 3;
         ps.start();
       })();
 
       // animação das texturas da névoa (brisa/quente)
+      let acc = 0, step = 1/60; // atualiza offsets ~60Hz (suave e barato)
       scene.onBeforeRenderObservable.add(()=>{
         const dt = engine.getDeltaTime()/1000;
+        acc += dt;
+        if (acc < step) return;
         for (const s of fogSlices){
           const tex = s.mat.opacityTexture;
-          tex.uOffset += s.speedU * dt;
-          tex.vOffset += s.speedV * dt;
+          tex.uOffset += s.speedU * acc;
+          tex.vOffset += s.speedV * acc;
         }
+        acc = 0;
       });
     })();
     // ======== FIM NÉVOA/LAVA ========
 
     engine.runRenderLoop(() => scene.render());
-    window.addEventListener('resize', () => engine.resize());
+    window.addEventListener('resize', () => {
+      engine.resize();
+      // mantém o mesmo nível de escala após resize
+      engine.setHardwareScalingLevel(isMobile ? 1.25 : 1.0);
+    });
 
     // ===== HUD: orientação
     function refreshOrientationBadge(){
@@ -442,7 +454,7 @@
           const e = camera.rotationQuaternion.toEulerAngles();
           const phoneRoll = e.z;
           const norm = Math.max(-1, Math.min(1, phoneRoll / MAX_ROLL_FOR_INPUT));
-          userInput = norm; // não invertido
+          userInput = norm;
         }
         const effective = userInput / (1 + K_RESIST * Math.abs(angle));
 
@@ -467,7 +479,6 @@
       }
     });
 
-    // ===== Game Over
     function triggerGameOver(){
       gameState = 'gameover';
       hud.setAttribute('aria-hidden','true');
@@ -486,7 +497,6 @@
       startCountdownThenRun();
     });
 
-    // ===== Menu → iniciar
     play.addEventListener('click', async () => {
       menu.classList.add('hide');
       hud.setAttribute('aria-hidden','false');

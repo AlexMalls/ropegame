@@ -232,8 +232,10 @@
     // ===== Input PC
     let keyTarget = 0, keyInput = 0;
     window.addEventListener('keydown', (e)=>{
-      if (e.code === 'KeyA') keyTarget = -1; else if (e.code === 'KeyD') keyTarget = 1;
+      if (e.code === 'KeyA') keyTarget = 1;  // empurra para direita
+      else if (e.code === 'KeyD') keyTarget = -1; // empurra para esquerda
     });
+
     window.addEventListener('keyup', (e)=>{
       if ((e.code === 'KeyA' && keyTarget === -1) || (e.code === 'KeyD' && keyTarget === 1)) keyTarget = 0;
     });
@@ -281,7 +283,7 @@
           const e = camera.rotationQuaternion.toEulerAngles();
           const phoneRoll = e.z;
           const norm = Math.max(-1, Math.min(1, phoneRoll / MAX_ROLL_FOR_INPUT));
-          userInput = -norm;
+          userInput = norm;
         }
         const effective = userInput / (1 + K_RESIST * Math.abs(angle));
 
@@ -347,4 +349,5 @@
   </script>
 </body>
 </html>
+
 

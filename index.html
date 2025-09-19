@@ -67,7 +67,11 @@
     .meter .needle { position:absolute; top:50%; left:50%; width:8px; height:70%; background:var(--fg);
       border-radius:3px; transform:translate(-50%, -50%); transition:left 0.05s linear; }
   </style>
+
+  <!-- Babylon Core -->
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <!-- Materials Library (para usar o LavaMaterial). CDN para prototipagem. -->
+  <script src="https://cdn.jsdelivr.net/npm/babylonjs-materials/babylon.lavaMaterial.min.js"></script>
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -127,10 +131,10 @@
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
-    // — Fog global sutil (suaviza distância sem roubar a cena)
+    // Fog global sutil pra amaciar distância (não rouba a cena)
     scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
     scene.fogColor = new BABYLON.Color3(0.03, 0.025, 0.035);
-    scene.fogDensity = 0.010; // bem leve. ajuste 0.006–0.016 conforme preferir. :contentReference[oaicite:3]{index=3}
+    scene.fogDensity = 0.010;
 
     // ===== Cena base =====
     let camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 1.2, 38), scene);
@@ -184,7 +188,7 @@
     }
     beam.material = metalMat;
 
-    // ======== NÉVOA “VOLUMÉTRICA” POR FATIAS (substitui as partículas) ========
+    // ======== NÉVOA “VOLUMÉTRICA” POR FATIAS ========
     (function makeLayeredGroundFog(){
       const roomSize = 80;
       const floorY   = -40;
@@ -193,13 +197,12 @@
 
       const height = 3.2;            // altura total do colchão de névoa
       const slices = 16;             // nº de fatias (mais = mais denso/caro)
-      const baseAlpha = 0.085;       // opacidade base de cada fatia
-      const tint = new BABYLON.Color3(1.0, 0.36, 0.10); // tom quente (ferro incandescente)
+      const baseAlpha = 0.085;       // opacidade base por camada
+      const tint = new BABYLON.Color3(1.0, 0.36, 0.10); // tom quente
 
       const fogSlices = [];
-
       for (let i=0;i<slices;i++){
-        const t = i/(slices-1); // 0 → base, 1 → topo
+        const t = i/(slices-1); // 0→base, 1→topo
         const y = floorY + 0.10 + t*height;
 
         const p = BABYLON.MeshBuilder.CreatePlane(`fogSlice${i}`, { width: planeSize, height: planeSize }, scene);
@@ -211,29 +214,21 @@
         m.disableLighting = true;
         m.backFaceCulling = false;
 
-        // textura de nuvem do Playground (tileável, alpha suave)
-        // lista oficial de texturas inclui "cloud.png" em /textures :contentReference[oaicite:4]{index=4}
         m.opacityTexture = new BABYLON.Texture("https://playground.babylonjs.com/textures/cloud.png", scene);
         m.opacityTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
         m.opacityTexture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
 
-        // variações por fatia evitam padrão repetido
         const scale = 2.2 + t*1.4 + Math.random()*0.4;
         m.opacityTexture.uScale = scale;
         m.opacityTexture.vScale = scale * (0.92 + Math.random()*0.16);
 
-        // cor só no emissive pra não depender de luz
         m.emissiveColor = tint.scale(0.30 + (1.0 - t)*0.25);
-
-        // distribuição de densidade (mais forte na base)
         m.alpha = baseAlpha * (1.0 - Math.pow(t, 1.35));
-
-        // modo de alpha padrão (sem aditivo) para evitar “bolinhas brilhantes”
         m.alphaMode = BABYLON.Engine.ALPHA_COMBINE;
 
         p.material = m;
 
-        // velocidades bem sutis, com leve variação
+        // >>> Você disse que curtiu mais rápido — ajuste aqui:
         const speedU = (0.025 + Math.random()*0.004) * (0.7 + (1.0 - t)*0.6);
         const speedV = (0.015 + Math.random()*0.003) * (0.7 + t*0.5);
         const dirU = Math.random() < 0.5 ? -1 : 1;
@@ -242,22 +237,63 @@
         fogSlices.push({mat:m, speedU: speedU*dirU, speedV: speedV*dirV});
       }
 
-      // leve brilho geral (bem discreto)
+      // Glow suave (lava/brasas e emissivos ganham um halo)
       const glow = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 16 });
-      glow.intensity = 0.22;
+      glow.intensity = 0.26;
 
-      // leve emissivo no piso para sugerir calor difuso
-      const heat = BABYLON.MeshBuilder.CreatePlane("heat", { size: planeSize }, scene);
-      heat.position = new BABYLON.Vector3(0, floorY + 0.03, 0);
-      heat.rotation.x = Math.PI / 2;
-      const heatMat = new BABYLON.StandardMaterial("heatMat", scene);
-      heatMat.disableLighting = true;
-      heatMat.emissiveColor = new BABYLON.Color3(1.0, 0.22, 0.05);
-      heatMat.alpha = 0.04;
-      heatMat.backFaceCulling = false;
-      heat.material = heatMat;
+      // === LAVA ANIMADA (LavaMaterial)
+      (function makeLava(){
+        // Mesmo tamanho da área interna
+        const lava = BABYLON.MeshBuilder.CreateGround("lava", {
+          width: planeSize, height: planeSize, subdivisions: 160
+        }, scene);
+        lava.position = new BABYLON.Vector3(0, floorY + 0.015, 0);
 
-      // animação super lenta = “brisa/quente”
+        // Material de lava — precisa de noise + diffuse
+        const lavaMat = new BABYLON.LavaMaterial("lavaMat", scene);
+        lavaMat.noiseTexture  = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/cloud.png", scene);
+        lavaMat.diffuseTexture = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/lavatile.jpg", scene);
+        lavaMat.speed = 0.18; // 0.10–0.25 dá aquele “borbulhar” sutil
+        lavaMat.fogColor = new BABYLON.Color3(0.95, 0.30, 0.08); // névoa da lava
+        lava.material = lavaMat;
+      })();
+
+      // === BRASAS/FAÍSCAS DE CALOR (GPUParticleSystem)
+      (function makeHeatSpecks(){
+        const cap = 2500;
+        const ps = (BABYLON.GPUParticleSystem && BABYLON.GPUParticleSystem.IsSupported)
+          ? new BABYLON.GPUParticleSystem("embers", { capacity: cap }, scene)
+          : new BABYLON.ParticleSystem("embers", cap, scene);
+
+        ps.particleTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
+        ps.emitter = new BABYLON.Vector3(0, floorY + 0.06, 0);
+
+        const half = planeSize * 0.5;
+        ps.minEmitBox = new BABYLON.Vector3(-half, 0, -half);
+        ps.maxEmitBox = new BABYLON.Vector3( half, 0,  half);
+
+        // Cores: branco → laranja → desaparecer
+        ps.color1 = new BABYLON.Color4(1.0, 0.95, 0.85, 0.95);
+        ps.color2 = new BABYLON.Color4(1.0, 0.30, 0.05, 0.85);
+        ps.colorDead = new BABYLON.Color4(1, 0.2, 0.0, 0.0);
+
+        ps.minSize = 0.06; ps.maxSize = 0.14;
+        ps.minLifeTime = 1.2; ps.maxLifeTime = 2.6;
+        ps.emitRate = 120; // densidade das brasas (80–200)
+
+        // Sobe devagar, leve drift lateral
+        ps.direction1 = new BABYLON.Vector3(-0.10,  0.35, -0.10);
+        ps.direction2 = new BABYLON.Vector3( 0.10,  0.55,  0.10);
+        ps.gravity = new BABYLON.Vector3(0, -0.05, 0); // puxa levemente pra baixo pra “dançar”
+        ps.minAngularSpeed = -0.8; ps.maxAngularSpeed = 0.8;
+        ps.minEmitPower = 0.15; ps.maxEmitPower = 0.35;
+        ps.updateSpeed = 0.008;
+        ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+
+        ps.start();
+      })();
+
+      // Animação das texturas da névoa (brisa/quente)
       scene.onBeforeRenderObservable.add(()=>{
         const dt = engine.getDeltaTime()/1000;
         for (const s of fogSlices){
@@ -267,7 +303,7 @@
         }
       });
     })();
-    // ======== FIM DA NÉVOA POR FATIAS ========
+    // ======== FIM NÉVOA/LAVA ========
 
     engine.runRenderLoop(() => scene.render());
     window.addEventListener('resize', () => engine.resize());
@@ -434,5 +470,3 @@
   </script>
 </body>
 </html>
-
-

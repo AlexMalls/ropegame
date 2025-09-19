@@ -59,32 +59,13 @@
     }
 
     /* ===== Régua de Equilíbrio ===== */
-    .meter {
-      width: 120px;
-      height: 10px;
-      border-radius: 12px;
-      background: rgba(0,0,0,.35);
-      border: 1px solid rgba(255,255,255,.08);
-      position: relative;
-      overflow: hidden;
-      box-shadow: inset 0 1px 2px rgba(0,0,0,.5);
-    }
-    .meter .track { width: 100%; height: 100%; position: relative; }
-    .meter .centerMark {
-      position: absolute; top: 50%; left: 50%;
-      width: 2px; height: 70%;
-      background: var(--navy);
-      transform: translate(-50%, -50%);
-      border-radius: 2px; opacity: .85;
-    }
-    .meter .needle {
-      position: absolute; top: 50%; left: 50%;
-      width: 8px; height: 70%;
-      background: var(--fg);
-      border-radius: 3px;
-      transform: translate(-50%, -50%);
-      transition: left 0.05s linear;
-    }
+    .meter { width:120px; height:10px; border-radius:12px; background:rgba(0,0,0,.35);
+      border:1px solid rgba(255,255,255,.08); position:relative; overflow:hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.5); }
+    .meter .track { width:100%; height:100%; position:relative; }
+    .meter .centerMark { position:absolute; top:50%; left:50%; width:2px; height:70%; background:var(--navy);
+      transform:translate(-50%, -50%); border-radius:2px; opacity:.85; }
+    .meter .needle { position:absolute; top:50%; left:50%; width:8px; height:70%; background:var(--fg);
+      border-radius:3px; transform:translate(-50%, -50%); transition:left 0.05s linear; }
   </style>
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
 </head>
@@ -146,6 +127,11 @@
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color4(0,0,0,1);
 
+    // — Fog global sutil (suaviza distância sem roubar a cena)
+    scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
+    scene.fogColor = new BABYLON.Color3(0.03, 0.025, 0.035);
+    scene.fogDensity = 0.010; // bem leve. ajuste 0.006–0.016 conforme preferir. :contentReference[oaicite:3]{index=3}
+
     // ===== Cena base =====
     let camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 1.2, 38), scene);
     camera.attachControl(canvas, true);
@@ -198,67 +184,90 @@
     }
     beam.material = metalMat;
 
-    // <<< COLE AQUI >>>
-    (function makeGroundFog(){
-      const roomSize = 80;            // seu box tem size 80 → piso interno em y = -40
+    // ======== NÉVOA “VOLUMÉTRICA” POR FATIAS (substitui as partículas) ========
+    (function makeLayeredGroundFog(){
+      const roomSize = 80;
       const floorY   = -40;
-      const fogY     = floorY + 0.8;  // altura base da névoa, levemente acima do piso
-      const margin   = 6;             // margem das paredes p/ evitar clipping na box
+      const margin   = 6;
+      const planeSize = roomSize - margin*2;
 
-      const fog = BABYLON.GPUParticleSystem && BABYLON.GPUParticleSystem.IsSupported
-        ? new BABYLON.GPUParticleSystem("groundFog", { capacity: 6000 }, scene)
-        : new BABYLON.ParticleSystem("groundFog", 6000, scene);
+      const height = 3.2;            // altura total do colchão de névoa
+      const slices = 16;             // nº de fatias (mais = mais denso/caro)
+      const baseAlpha = 0.085;       // opacidade base de cada fatia
+      const tint = new BABYLON.Color3(1.0, 0.36, 0.10); // tom quente (ferro incandescente)
 
-      fog.particleTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
+      const fogSlices = [];
 
-      fog.emitter   = new BABYLON.Vector3(0, fogY, 0);
-      const half = roomSize * 0.5 - margin;
-      fog.minEmitBox = new BABYLON.Vector3(-half, 0, -half);
-      fog.maxEmitBox = new BABYLON.Vector3( half, 0,  half);
+      for (let i=0;i<slices;i++){
+        const t = i/(slices-1); // 0 → base, 1 → topo
+        const y = floorY + 0.10 + t*height;
 
-      fog.color1 = new BABYLON.Color4(1.0, 0.45, 0.18, 0.10);
-      fog.color2 = new BABYLON.Color4(1.0, 0.25, 0.05, 0.08);
-      fog.colorDead = new BABYLON.Color4(1, 0.2, 0.0, 0.0);
+        const p = BABYLON.MeshBuilder.CreatePlane(`fogSlice${i}`, { width: planeSize, height: planeSize }, scene);
+        p.position = new BABYLON.Vector3(0, y, 0);
+        p.rotation.x = Math.PI/2;
+        p.alwaysSelectAsActiveMesh = true;
 
-      fog.minSize = 1.2; fog.maxSize = 3.8;
-      fog.minLifeTime = 3.0; fog.maxLifeTime = 7.0;
-      fog.emitRate = 800;
+        const m = new BABYLON.StandardMaterial(`fogMat${i}`, scene);
+        m.disableLighting = true;
+        m.backFaceCulling = false;
 
-      fog.gravity = new BABYLON.Vector3(0, -0.02, 0);
-      fog.direction1 = new BABYLON.Vector3(-0.25, 0.05, -0.25);
-      fog.direction2 = new BABYLON.Vector3( 0.25, 0.00,  0.25);
-      fog.minAngularSpeed = -0.2; fog.maxAngularSpeed = 0.2;
-      fog.minEmitPower = 0.05; fog.maxEmitPower = 0.15;
-      fog.updateSpeed = 0.015;
-      fog.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+        // textura de nuvem do Playground (tileável, alpha suave)
+        // lista oficial de texturas inclui "cloud.png" em /textures :contentReference[oaicite:4]{index=4}
+        m.opacityTexture = new BABYLON.Texture("https://playground.babylonjs.com/textures/cloud.png", scene);
+        m.opacityTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+        m.opacityTexture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
 
-      const maxFogHeight = 3.0;
-      const _updateFunc = fog.updateFunction;
-      fog.updateFunction = function(particles){
-        _updateFunc.call(fog, particles);
-        for (let p of particles) {
-          if (!p || !p.position) continue;
-          const h = p.position.y - floorY;
-          if (h > maxFogHeight) p.age = p.lifeTime;
-        }
-      };
+        // variações por fatia evitam padrão repetido
+        const scale = 2.2 + t*1.4 + Math.random()*0.4;
+        m.opacityTexture.uScale = scale;
+        m.opacityTexture.vScale = scale * (0.92 + Math.random()*0.16);
 
-      fog.start();
+        // cor só no emissive pra não depender de luz
+        m.emissiveColor = tint.scale(0.30 + (1.0 - t)*0.25);
 
+        // distribuição de densidade (mais forte na base)
+        m.alpha = baseAlpha * (1.0 - Math.pow(t, 1.35));
+
+        // modo de alpha padrão (sem aditivo) para evitar “bolinhas brilhantes”
+        m.alphaMode = BABYLON.Engine.ALPHA_COMBINE;
+
+        p.material = m;
+
+        // velocidades bem sutis, com leve variação
+        const speedU = (0.003 + Math.random()*0.004) * (0.7 + (1.0 - t)*0.6);
+        const speedV = (0.002 + Math.random()*0.003) * (0.7 + t*0.5);
+        const dirU = Math.random() < 0.5 ? -1 : 1;
+        const dirV = Math.random() < 0.5 ? -1 : 1;
+
+        fogSlices.push({mat:m, speedU: speedU*dirU, speedV: speedV*dirV});
+      }
+
+      // leve brilho geral (bem discreto)
       const glow = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 16 });
-      glow.intensity = 0.35;
+      glow.intensity = 0.22;
 
-      const heatPlane = BABYLON.MeshBuilder.CreatePlane("heat", { size: roomSize - margin*2 }, scene);
-      heatPlane.position = new BABYLON.Vector3(0, floorY + 0.05, 0);
-      heatPlane.rotation.x = Math.PI / 2;
+      // leve emissivo no piso para sugerir calor difuso
+      const heat = BABYLON.MeshBuilder.CreatePlane("heat", { size: planeSize }, scene);
+      heat.position = new BABYLON.Vector3(0, floorY + 0.03, 0);
+      heat.rotation.x = Math.PI / 2;
       const heatMat = new BABYLON.StandardMaterial("heatMat", scene);
       heatMat.disableLighting = true;
-      heatMat.emissiveColor = new BABYLON.Color3(1.0, 0.25, 0.06);
-      heatMat.alpha = 0.05;
+      heatMat.emissiveColor = new BABYLON.Color3(1.0, 0.22, 0.05);
+      heatMat.alpha = 0.04;
       heatMat.backFaceCulling = false;
-      heatPlane.material = heatMat;
+      heat.material = heatMat;
+
+      // animação super lenta = “brisa/quente”
+      scene.onBeforeRenderObservable.add(()=>{
+        const dt = engine.getDeltaTime()/1000;
+        for (const s of fogSlices){
+          const tex = s.mat.opacityTexture;
+          tex.uOffset += s.speedU * dt;
+          tex.vOffset += s.speedV * dt;
+        }
+      });
     })();
-    // <<< FIM DA NÉVOA >>>
+    // ======== FIM DA NÉVOA POR FATIAS ========
 
     engine.runRenderLoop(() => scene.render());
     window.addEventListener('resize', () => engine.resize());
@@ -425,6 +434,3 @@
   </script>
 </body>
 </html>
-
-
-

@@ -210,7 +210,7 @@
       const fogSlices = [];
       for (let i=0;i<slices;i++){
         const t = i/(slices-1); // 0→base, 1→topo
-        const y = floorY + 0.10 + t*height;
+        const y = floorY + 5 + t*height;
 
         const p = BABYLON.MeshBuilder.CreatePlane(`fogSlice${i}`, { width: planeSize, height: planeSize }, scene);
         p.position = new BABYLON.Vector3(0, y, 0);
@@ -259,7 +259,7 @@
         const lava = BABYLON.MeshBuilder.CreateGround("lava", {
           width: planeSize, height: planeSize, subdivisions: 160
         }, scene);
-        lava.position = new BABYLON.Vector3(0, floorY + 4.0, 0);
+        lava.position = new BABYLON.Vector3(0, floorY + 5.0, 0);
         lava.renderingGroupId = 1; // desenha após a viga, mas depth é preservado
 
         const lavaMat = new BABYLON.LavaMaterial("lavaMat", scene);
@@ -289,7 +289,7 @@
           : new BABYLON.ParticleSystem("embers", cap, scene);
 
         ps.particleTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
-        ps.emitter = new BABYLON.Vector3(0, floorY + 0.06, 0);
+        ps.emitter = new BABYLON.Vector3(0, floorY + 6, 0);
 
         const half = planeSize * 0.5;
         ps.minEmitBox = new BABYLON.Vector3(-half, 0, -half);
@@ -492,6 +492,7 @@
   </script>
 </body>
 </html>
+
 
 
 

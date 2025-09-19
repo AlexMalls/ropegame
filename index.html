@@ -259,7 +259,7 @@
         const lava = BABYLON.MeshBuilder.CreateGround("lava", {
           width: planeSize, height: planeSize, subdivisions: 160
         }, scene);
-        lava.position = new BABYLON.Vector3(0, floorY + 0.015, 0);
+        lava.position = new BABYLON.Vector3(0, floorY + 0.1, 0);
         lava.renderingGroupId = 1; // desenha após a viga, mas depth é preservado
 
         const lavaMat = new BABYLON.LavaMaterial("lavaMat", scene);
@@ -492,3 +492,4 @@
   </script>
 </body>
 </html>
+

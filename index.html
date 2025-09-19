@@ -127,16 +127,20 @@
 
     // ===== Corda/Viga metálica (escurecida) =====
     const beamY = 0.12; // ~pés do jogador
-    // Âncoras FIXAS no mundo: logo abaixo do ponto inicial do jogador e logo abaixo da caixa
+    // Âncoras FIXAS no mundo (mesma altura nos dois extremos)
+    const BEAM_CLEARANCE = 0.8; // deixa uma folga antes da caixa
     const beamStart = new BABYLON.Vector3(rig.position.x, beamY, rig.position.z);
-    const beamEnd   = new BABYLON.Vector3(cube.position.x, beamY, cube.position.z);
-    const beamDir   = beamEnd.subtract(beamStart);
-    const beamLen   = beamDir.length();
-    const beamMid   = beamStart.add(beamEnd).scale(0.5);
+    const beamEnd   = new BABYLON.Vector3(cube.position.x, Math.max(0.02, beamY - 0.06), cube.position.z); // ponta um pouco mais baixa
+    const dirH = beamEndRaw.subtract(beamStart); // vetor horizontal
+    const fullLen = dirH.length();
+    const trimmedLen = Math.max(0.1, fullLen - BEAM_CLEARANCE);
+    const dirN = dirH.normalize();
+    const beamEnd = beamStart.add(dirN.scale(trimmedLen));
+    const beamMid = beamStart.add(beamEnd).scale(0.5);
 
-    const beam = BABYLON.MeshBuilder.CreateBox('beam', { width:0.15, height:0.08, depth:beamLen }, scene);
+    const beam = BABYLON.MeshBuilder.CreateBox('beam', { width:0.15, height:0.08, depth: trimmedLen }, scene);
     beam.position = beamMid;
-    beam.lookAt(beamEnd); // alinha exatamente no plano horizontal
+    beam.lookAt(beamEnd); // perfeitamente horizontal (mesmo Y em ambos)
 
     // Material metálico mais escuro
     const metalMat = new BABYLON.StandardMaterial('metalMat', scene);
@@ -146,7 +150,7 @@
     metalMat.specularPower = 32;
     if (metalMat.diffuseTexture){
       metalMat.diffuseTexture.level = 0.75;
-      metalMat.diffuseTexture.uScale = Math.max(1, beamLen / 4);
+      metalMat.diffuseTexture.uScale = Math.max(1, trimmedLen / 4);
       metalMat.diffuseTexture.vScale = 1;
     }
     beam.material = metalMat;
@@ -154,109 +158,15 @@
     // ===== Render loop
 
     // ===== Render loop
-    engine.runRenderLoop(() => scene.render());
-    window.addEventListener('resize', () => engine.resize());
-
-    // ===== HUD: orientação
-    function refreshOrientationBadge(){
-      const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-      orientBadge.textContent = isLandscape ? 'Landscape' : 'Portrait';
+    
+    function gameOver(){
+      if (gameState === 'gameover') return;
+      gameState = 'gameover';
+      const msg = document.createElement('div');
+      msg.textContent = 'GAME OVER';
+      Object.assign(msg.style, {position:'fixed', inset:'0', display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none', fontWeight:'900', fontSize:'min(14vw, 88px)', color:'#e6ebf5', textShadow:'0 8px 40px rgba(0,0,0,.6)', zIndex:4});
+      document.body.appendChild(msg);
     }
-    refreshOrientationBadge();
-    window.matchMedia('(orientation: landscape)').addEventListener?.('change', refreshOrientationBadge);
-
-    // ===== Giroscópio: auto no mobile (+90° apenas no mobile)
-    let yawOffset = (isMobile ? Math.PI / 2 : 0), pitchOffset = 0, rollOffset = 0; // offsets de calibração
-
-    async function requestMotionPermission(){
-      try{
-        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
-          const r = await DeviceMotionEvent.requestPermission(); if (r !== 'granted') return false;
-        }
-        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
-          const r2 = await DeviceOrientationEvent.requestPermission(); if (r2 !== 'granted') return false;
-        }
-      }catch(_){ /* ignore */ }
-      return true;
-    }
-
-    function swapToDeviceOrientationCamera(){
-      // guarda FOV/planos; mantém posição no RIG
-      const fov = camera.fov, minZ = camera.minZ, maxZ = camera.maxZ;
-      const devcam = new BABYLON.DeviceOrientationCamera('devcam', BABYLON.Vector3.Zero(), scene);
-      devcam.fov = fov; devcam.minZ = minZ; devcam.maxZ = maxZ;
-      devcam.attachControl(canvas, true);
-      devcam._disablePointerInputWhenUsingDeviceOrientation = false;
-
-      // parent no rig e zera posição local
-      devcam.parent = rig; devcam.position.set(0,0,0);
-
-      scene.activeCamera = devcam;
-      camera.detachControl(canvas); camera.dispose(); camera = devcam;
-
-      // Aplica offsets após inputs para manter +90° inicial no mobile
-      camera.onAfterCheckInputsObservable.clear();
-      camera.onAfterCheckInputsObservable.add(() => {
-        const q = camera.rotationQuaternion; if (!q) return;
-        const adjust = BABYLON.Quaternion.FromEulerAngles(pitchOffset, yawOffset, rollOffset);
-        const finalQ = adjust.multiply(q);
-        camera.rotationQuaternion.copyFrom(finalQ);
-      });
-    }
-
-    async function enableGyroAuto(){
-      const ok = await requestMotionPermission(); if (!ok) return;
-      swapToDeviceOrientationCamera();
-    }
-
-    function calibrate(){
-      if (!camera.rotationQuaternion) return;
-      const e = camera.rotationQuaternion.toEulerAngles();
-      yawOffset   += -e.y; // acumula offsets sem teleporte
-      pitchOffset += -e.x;
-      rollOffset   = 0;
-    }
-
-    // ===== Input PC: A/D para compensar =====
-    let keyTarget = 0, keyInput = 0; // suavizado
-    window.addEventListener('keydown', (e)=>{
-      if (e.code === 'KeyA') keyTarget = -1; else if (e.code === 'KeyD') keyTarget = 1;
-    });
-    window.addEventListener('keyup', (e)=>{
-      if ((e.code === 'KeyA' && keyTarget === -1) || (e.code === 'KeyD' && keyTarget === 1)) keyTarget = 0;
-    });
-
-    // ===== Contador 3D (sobre a caixa) =====
-    function startCountdownThenRun(){
-      gameState = 'countdown';
-      const plane = BABYLON.MeshBuilder.CreatePlane('countPlane', { size: 1.4 }, scene);
-      plane.position = cube.position.add(new BABYLON.Vector3(0, 1.6, 0));
-      plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
-      const dt = new BABYLON.DynamicTexture('countDT', {width:512, height:512}, scene, true);
-      const mat = new BABYLON.StandardMaterial('countMat', scene);
-      mat.diffuseTexture = dt; mat.emissiveColor = new BABYLON.Color3(0.92,0.96,1.0); mat.specularColor = new BABYLON.Color3(0,0,0); mat.backFaceCulling = false;
-      plane.material = mat;
-      const draw = (n)=>{
-        const ctx = dt.getContext(); const s = dt.getSize();
-        ctx.clearRect(0,0,s.width,s.height);
-        ctx.fillStyle = '#e6ebf5'; ctx.textAlign='center'; ctx.textBaseline='middle';
-        ctx.font = 'bold 340px system-ui,Segoe UI,Arial';
-        ctx.fillText(String(n), s.width/2, s.height/2);
-        dt.update();
-      };
-      let n = 3; draw(n);
-      const id = setInterval(()=>{
-        n--; if (n>0){ draw(n); } else { clearInterval(id); plane.dispose(); gameState='running'; }
-      }, 1000);
-    }
-
-    // ===== Mecânica de equilíbrio (pêndulo invertido simplificado) =====
-    let gameState = 'menu';
-    let angle = 0, omega = 0; // rotação lateral do rig (rad) e velocidade angular
-    const K_GRAV = 1.6, K_DAMP = 1.1, K_INPUT = 2.0, K_RESIST = 1.2; // constantes simples
-    const MAX_ROLL_FOR_INPUT = 0.6; // ~34° – saturação do input do celular
-    const FALL_LIMIT = 0.9;         // ~52° – limite antes de cair (por ora só clamp)
-    const SPEED = 2.0;              // avanço m/s em direção à caixa
 
     engine.runRenderLoop(()=>{
       const dt = engine.getDeltaTime() / 1000;
@@ -279,8 +189,13 @@
         const acc = K_GRAV * Math.sin(angle) - K_DAMP * omega - K_INPUT * effective;
         omega += acc * dt;
         angle += omega * dt;
-        angle = Math.max(-FALL_LIMIT, Math.min(FALL_LIMIT, angle));
-        rig.rotation.z = angle;
+        if (Math.abs(angle) >= FALL_LIMIT){
+          // GAME OVER: para movimento e mostra aviso
+          gameOver();
+        } else {
+          angle = Math.max(-FALL_LIMIT, Math.min(FALL_LIMIT, angle));
+          rig.rotation.z = angle;
+        }
 
         // ===== Avanço em direção à caixa
         const toCube = cube.position.subtract(rig.position);

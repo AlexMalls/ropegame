@@ -761,8 +761,8 @@
 
     function spawnFinishText(){
       // plano 3D com texto transparente, "atrás" da caixa (z menor)
-      const plane = BABYLON.MeshBuilder.CreatePlane('finishText', { width: 3.2, height: 0.9 }, scene);
-      plane.position = cube.position.add(new BABYLON.Vector3(0, 1.6, -2)); // atrás da caixa
+      const plane = BABYLON.MeshBuilder.CreatePlane('finishText', { width: 5.0, height: 0.9 }, scene);
+      plane.position = cube.position.add(new BABYLON.Vector3(0, 1.3, -3)); // atrás da caixa
       plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
     
       const dt = new BABYLON.DynamicTexture('finishDT', { width: 1024, height: 256 }, scene, true);
@@ -867,4 +867,5 @@
   </script>
 </body>
 </html>
+
 

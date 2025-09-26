@@ -430,6 +430,8 @@
     const FALL_LIMIT = 0.9;
     const GAME_OVER_LIMIT = 0.8;
     const SPEED = 2.0;
+    const FINISH_DIST = 1.55; // distância única para parar e finalizar
+
 
     // Inputs mecânica original
     let keyTarget = 0, keyInput = 0;
@@ -599,14 +601,17 @@
         const toCube = cube.position.subtract(rig.position);
         const dist = toCube.length();
         
-        if (!hasFinished && dist <= 1.4){
-          // chegou ao fim
-          triggerFinish();
-        } else if (dist > 1.6){
-          // ainda longe: continua avançando
-          toCube.normalize();
-          rig.position.addInPlace(toCube.scale(SPEED * dt));
+        if (!hasFinished) {
+          if (dist <= FINISH_DIST) {
+            // distância de chegada única -> finaliza
+            triggerFinish();
+          } else {
+            // aproxima até encostar no FINISH_DIST
+            toCube.normalize();
+            rig.position.addInPlace(toCube.scale(SPEED * dt));
+          }
         }
+
 
       } else if (gameState === 'freecam'){
         const fc = camera;
@@ -862,3 +867,4 @@
   </script>
 </body>
 </html>
+

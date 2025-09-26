@@ -140,6 +140,15 @@
   <script>
   (function(){
     const canvas = document.getElementById('game');
+
+    function goFullscreen() {
+      if (canvas.requestFullscreen) {
+        canvas.requestFullscreen().catch(()=>{});
+      } else if (canvas.webkitRequestFullscreen) { // Safari iOS
+        canvas.webkitRequestFullscreen();
+      }
+    }
+
     const menu   = document.getElementById('menu');
     const play   = document.getElementById('play');
     const freeBtn= document.getElementById('freecam');
@@ -452,7 +461,7 @@
 
     // >>>>>>> CONFIGURAÇÕES (sem UI) <<<<<<<<
     const VR_VIEW_SCALE = 0.88;      // 0.70..1.00  (diminui/aumenta cada olho)
-    const VR_VIEW_SEPARATION = -0.40; // -0.15..+0.15 (junta/afasta os olhos)
+    const VR_VIEW_SEPARATION = -0.20; // -0.15..+0.15 (junta/afasta os olhos)
 
     function computeVRViewports(){
       const s = Math.max(0.7, Math.min(1.0, VR_VIEW_SCALE));
@@ -716,6 +725,7 @@
     });
 
     play.addEventListener('click', async () => {
+      goFullscreen();
       menu.classList.add('hide');
       hud.setAttribute('aria-hidden','false');
       meter.style.display = '';
@@ -737,6 +747,7 @@
 
     // ⭐ Botão Modo Livre
     freemodeBtn.addEventListener("click", () => {
+      goFullscreen();
       menu.classList.add("hide");
       hud.setAttribute("aria-hidden","true");
       meter.style.display = "none";
@@ -757,4 +768,5 @@
   </script>
 </body>
 </html>
+
 

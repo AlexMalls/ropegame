@@ -67,7 +67,7 @@
     .meter .needle { position:absolute; top:50%; left:50%; width:8px; height:70%; background:var(--fg);
       border-radius:3px; transform:translate(-50%, -50%); transition:left 0.05s linear; }
 
-    /* ===== Botão VR Mode ===== */
+    /* ===== Botão VR Mode flutuante ===== */
     .vr-btn {
       position: absolute;
       top: 14px;
@@ -77,12 +77,34 @@
       border-radius: 12px;
       background: linear-gradient(135deg, #2a003f, #5a0f75);
       box-shadow: 0 8px 24px rgba(90,15,117,.45), inset 0 1px 0 rgba(255,255,255,.08);
-      z-index: 4;
+      z-index: 6;
     }
     .vr-btn:hover {
       transform: translateY(-1px);
       box-shadow: 0 12px 28px rgba(90,15,117,.55), inset 0 1px 0 rgba(255,255,255,.1);
     }
+
+    /* ===== Painel de Configurações VR (só no Modo Livre) ===== */
+    #vrSettings {
+      position: fixed;
+      top: 68px;
+      right: 14px;
+      width: min(90vw, 320px);
+      z-index: 5;
+      padding: 14px 14px 10px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.35));
+      border:1px solid rgba(255,255,255,.08);
+      box-shadow: 0 16px 44px rgba(0,0,0,.5);
+      display: none;
+    }
+    #vrSettings.visible { display:block; }
+    #vrSettings h3 { margin: 0 0 10px; font-size: 15px; letter-spacing: .2px; }
+    #vrSettings .row { display:grid; grid-template-columns: 1fr auto; align-items:center; gap:10px; margin:10px 0; }
+    #vrSettings label { font-size:12px; opacity:.9; }
+    #vrSettings input[type="range"] { width: 100%; }
+    #vrSettings .val { font-size:12px; opacity:.8; min-width:46px; text-align:right; }
+    #vrSettings .toggle { display:flex; gap:8px; align-items:center; font-size:12px; }
   </style>
 
   <!-- Babylon Core -->
@@ -137,6 +159,46 @@
     </div>
   </div>
 
+  <!-- ===== Painel de Configurações VR (aparece no Modo Livre) ===== -->
+  <div id="vrSettings" role="group" aria-label="Configurações de VR">
+    <h3>Configurações VR</h3>
+
+    <div class="row">
+      <label for="vrSize">Tamanho do visor</label>
+      <div class="val" id="vrSizeVal">95%</div>
+      <input id="vrSize" type="range" min="70" max="100" step="1" value="95" />
+    </div>
+
+    <div class="row">
+      <label for="vrSep">Separação</label>
+      <div class="val" id="vrSepVal">0%</div>
+      <input id="vrSep" type="range" min="-15" max="15" step="0.5" value="0" />
+    </div>
+
+    <div class="row">
+      <label for="vrIPD">IPD / interaxial</label>
+      <div class="val" id="vrIPDVal">63mm</div>
+      <input id="vrIPD" type="range" min="30" max="70" step="1" value="63" />
+    </div>
+
+    <div class="toggle">
+      <input id="vrDistEnable" type="checkbox" />
+      <label for="vrDistEnable">Ativar distorção de lente (barrel)</label>
+    </div>
+
+    <div class="row">
+      <label for="vrK1">Distorção k1</label>
+      <div class="val" id="vrK1Val">0.22</div>
+      <input id="vrK1" type="range" min="0.00" max="0.60" step="0.01" value="0.22" />
+    </div>
+
+    <div class="row">
+      <label for="vrK2">Distorção k2</label>
+      <div class="val" id="vrK2Val">0.24</div>
+      <input id="vrK2" type="range" min="0.00" max="0.60" step="0.01" value="0.24" />
+    </div>
+  </div>
+
   <script>
   (function(){
     const canvas = document.getElementById('game');
@@ -151,6 +213,20 @@
     const restart  = document.getElementById('restart');
     const needle = document.querySelector('#balanceMeter .needle');
     const meter  = document.getElementById('balanceMeter');
+
+    // VR settings UI
+    const vrPanel = document.getElementById('vrSettings');
+    const rngSize = document.getElementById('vrSize');
+    const rngSep  = document.getElementById('vrSep');
+    const rngIPD  = document.getElementById('vrIPD');
+    const chkDist = document.getElementById('vrDistEnable');
+    const rngK1   = document.getElementById('vrK1');
+    const rngK2   = document.getElementById('vrK2');
+    const vrSizeVal = document.getElementById('vrSizeVal');
+    const vrSepVal  = document.getElementById('vrSepVal');
+    const vrIPDVal  = document.getElementById('vrIPDVal');
+    const vrK1Val   = document.getElementById('vrK1Val');
+    const vrK2Val   = document.getElementById('vrK2Val');
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && screen.width < 1025);
 
@@ -236,7 +312,7 @@
     beam.isPickable = false;
     beam.freezeWorldMatrix();
 
-    // Névoa/Lava/Partículas
+    // Névoa/Lava/Partículas (mesmo bloco que você já tinha)
     (function makeLayeredGroundFog(){
       const roomWidth  = 350, roomDepth  = 105, margin = 6;
       const planeWidth  = roomWidth  - margin*2;
@@ -259,8 +335,7 @@
         m.opacityTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
         m.opacityTexture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
         const scale = 2.2 + t*1.4 + Math.random()*0.4;
-        m.opacityTexture.uScale = scale;
-        m.opacityTexture.vScale = scale * (0.92 + Math.random()*0.16);
+        m.opacityTexture.uScale = scale; m.opacityTexture.vScale = scale * (0.92 + Math.random()*0.16);
         m.emissiveColor = tint.scale(0.45 + (1.5 - t)*0.35);
         m.alpha = baseAlpha * (2.0 - Math.pow(t, 1.35));
         m.alphaMode = BABYLON.Engine.ALPHA_COMBINE;
@@ -446,45 +521,159 @@
       needle.style.left = `calc(50% + ${percent}%)`;
     }
 
-    // ========= VR Mode infra =========
+    // ========= VR infra (duas câmeras de render + ajustes) =========
     let vrMode = false;
-    let vrRightCam = null;
+    let leftEye = null, rightEye = null;
+    let barrelPPLeft = null, barrelPRight = null;
 
-    function syncRightCamFromLeft(){
-      if (!vrRightCam) return;
-      vrRightCam.parent = camera.parent;
-      vrRightCam.fov = camera.fov;
-      vrRightCam.minZ = camera.minZ;
-      vrRightCam.maxZ = camera.maxZ;
-      if (camera.rotationQuaternion){
-        if (!vrRightCam.rotationQuaternion) vrRightCam.rotationQuaternion = new BABYLON.Quaternion();
-        vrRightCam.rotationQuaternion.copyFrom(camera.rotationQuaternion);
-        vrRightCam.rotation.set(0,0,0);
-      } else {
-        vrRightCam.rotation.copyFrom(camera.rotation);
-        vrRightCam.rotationQuaternion = null;
+    // parâmetros ajustáveis
+    let vrSize = 0.95;      // 0.70..1.00 (escala do viewport de cada olho)
+    let vrSep  = 0.00;      // -0.15..+0.15 (deslocamento horizontal dos viewports)
+    let ipdMeters = 0.063;  // 30..70 mm → 0.03..0.07 m
+    let distEnable = false;
+    let k1 = 0.22, k2 = 0.24;
+
+    // shader simples de barrel distortion (para cada olho)
+    BABYLON.Effect.ShadersStore["barrelPixelShader"] = `
+      precision highp float;
+      varying vec2 vUV;
+      uniform sampler2D textureSampler;
+      uniform float k1;
+      uniform float k2;
+      uniform float centerX;
+      uniform float centerY;
+      uniform float scale;
+      void main(void){
+        vec2 uv = vUV;
+        vec2 center = vec2(centerX, centerY);
+        vec2 t = (uv - center);
+        float r2 = dot(t, t);
+        vec2 radial = t * (1.0 + k1 * r2 + k2 * r2 * r2);
+        vec2 uv2 = center + radial * scale;
+        if(any(lessThan(uv2, vec2(0.0))) || any(greaterThan(uv2, vec2(1.0)))){
+          gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        } else {
+          gl_FragColor = texture2D(textureSampler, uv2);
+        }
       }
-      vrRightCam.position.copyFrom(camera.position);
+    `;
+
+    function buildBarrelPP(cam){
+      const pp = new BABYLON.PostProcess("barrel", "barrel",
+        ["k1","k2","centerX","centerY","scale"], null, 1.0, cam, BABYLON.Texture.BILINEAR_SAMPLINGMODE, engine, false);
+      pp.onApply = (effect)=>{
+        effect.setFloat("k1", k1);
+        effect.setFloat("k2", k2);
+        effect.setFloat("centerX", 0.5);
+        effect.setFloat("centerY", 0.5);
+        effect.setFloat("scale", 1.0);
+      };
+      return pp;
+    }
+
+    function ensureEyeCameras(){
+      if (leftEye && rightEye) return;
+
+      leftEye  = new BABYLON.UniversalCamera("leftEye", BABYLON.Vector3.Zero(), scene);
+      rightEye = new BABYLON.UniversalCamera("rightEye", BABYLON.Vector3.Zero(), scene);
+
+      // sem inputs próprios; seguem a câmera "cabeça"
+      [leftEye, rightEye].forEach(c=>{
+        c.minZ = camera.minZ; c.maxZ = camera.maxZ; c.fov = camera.fov;
+        c.parent = rig; c.position.set(0,0,0);
+      });
+
+      // Post-process de distorção (desligado por padrão)
+      if (distEnable){
+        barrelPPLeft  = buildBarrelPP(leftEye);
+        barrelPRight  = buildBarrelPP(rightEye);
+      }
+    }
+
+    function disposeEyeCameras(){
+      if (barrelPPLeft){ barrelPPLeft.dispose(); barrelPPLeft = null; }
+      if (barrelPRight){ barrelPRight.dispose(); barrelPRight = null; }
+      if (leftEye){ leftEye.dispose(); leftEye = null; }
+      if (rightEye){ rightEye.dispose(); rightEye = null; }
+    }
+
+    function applyVRViewports(){
+      if (!leftEye || !rightEye) return;
+
+      // escala do visor (vrSize) e separação (vrSep)
+      const size = Math.max(0.7, Math.min(1.0, vrSize)); // clamped
+      const height = size;            // altura relativa à tela
+      const width  = 0.5 * size;      // cada olho ocupa metade da tela na largura base
+
+      // base centers
+      const cxLeft  = 0.25; // centro da metade esquerda
+      const cxRight = 0.75; // centro da metade direita
+
+      const sep = vrSep; // deslocamento adicional (em fração da largura da tela)
+
+      const xLeft  = (cxLeft  - width/2)  - sep/2;
+      const xRight = (cxRight - width/2)  + sep/2;
+      const y      = (1.0 - height) / 2;
+
+      leftEye.viewport  = new BABYLON.Viewport(xLeft,  y, width, height);
+      rightEye.viewport = new BABYLON.Viewport(xRight, y, width, height);
+    }
+
+    function syncEyesFromHead(){
+      if (!leftEye || !rightEye) return;
+
+      // fov e clipping iguais
+      [leftEye, rightEye].forEach(c=>{
+        c.fov = camera.fov; c.minZ = camera.minZ; c.maxZ = camera.maxZ;
+      });
+
+      // orientação igual à câmera "cabeça"
+      if (camera.rotationQuaternion){
+        [leftEye, rightEye].forEach(c=>{
+          if (!c.rotationQuaternion) c.rotationQuaternion = new BABYLON.Quaternion();
+          c.rotationQuaternion.copyFrom(camera.rotationQuaternion);
+          c.rotation.set(0,0,0);
+        });
+      } else {
+        [leftEye, rightEye].forEach(c=>{
+          c.rotation.copyFrom(camera.rotation);
+          c.rotationQuaternion = null;
+        });
+      }
+
+      // offset em X local (IPD/2 pra cada lado)
+      const rightVec = camera.getDirection(BABYLON.Axis.X);
+      const half = ipdMeters * 0.5;
+      leftEye.position.copyFrom(camera.position).addInPlace(rightVec.scale(-half));
+      rightEye.position.copyFrom(camera.position).addInPlace(rightVec.scale(+half));
     }
 
     function enableVRMode(){
-      camera.viewport = new BABYLON.Viewport(0, 0, 0.5, 1);
-      if (vrRightCam) vrRightCam.dispose();
-      vrRightCam = new BABYLON.UniversalCamera("camRight", BABYLON.Vector3.Zero(), scene);
-      vrRightCam.parent = camera.parent;
-      vrRightCam.position.copyFrom(camera.position);
-      vrRightCam.viewport = new BABYLON.Viewport(0.5, 0, 0.5, 1);
-      syncRightCamFromLeft();
-      scene.activeCameras = [camera, vrRightCam];
+      ensureEyeCameras();
+      applyVRViewports();
+      if (distEnable){
+        if (!barrelPPLeft)  barrelPPLeft  = buildBarrelPP(leftEye);
+        if (!barrelPRight)  barrelPRight  = buildBarrelPP(rightEye);
+      } else {
+        if (barrelPPLeft){ barrelPPLeft.dispose(); barrelPPLeft=null; }
+        if (barrelPRight){ barrelPRight.dispose(); barrelPRight=null; }
+      }
+      // render só pelos olhos; a "camera" (cabeça) fica fora do render
+      scene.activeCameras = [leftEye, rightEye];
       vrBtn.textContent = "VR Mode: ON";
     }
+
     function disableVRMode(){
-      camera.viewport = new BABYLON.Viewport(0, 0, 1, 1);
       scene.activeCameras = [camera];
-      if (vrRightCam){ vrRightCam.dispose(); vrRightCam = null; }
+      disposeEyeCameras();
+      // restaura viewport cheia na câmera principal
+      camera.viewport = new BABYLON.Viewport(0,0,1,1);
       vrBtn.textContent = "VR Mode";
     }
-    function rebuildVRIfNeeded(){ if (vrMode) enableVRMode(); else disableVRMode(); }
+
+    function rebuildVRIfNeeded(){
+      if (vrMode) enableVRMode(); else disableVRMode();
+    }
 
     // ========= MODO LIVRE =========
     let freemodeForward = 0;   // -1 trás, +1 frente
@@ -492,7 +681,6 @@
     let freemodeCooldown = 0;  // evita spam de toques
 
     function cameraForwardXZ(){
-      // direção para frente baseada na câmera atual, projetada no XZ
       const fwd = camera.getDirection(BABYLON.Axis.Z).clone();
       fwd.y = 0;
       const len = fwd.length();
@@ -505,7 +693,7 @@
         if (freemodeCooldown <= 0) {
           const dir = cameraForwardXZ();
           rig.position.addInPlace(dir.scale(freemodeStep));
-          freemodeCooldown = 0.18; // ~180ms
+          freemodeCooldown = 0.18;
         }
       }
     });
@@ -565,15 +753,14 @@
         }
       } else if (gameState === 'freemode'){
         if (freemodeCooldown > 0) freemodeCooldown -= dt;
-        // movimento contínuo no desktop
         if (freemodeForward !== 0){
           const dir = cameraForwardXZ();
           rig.position.addInPlace(dir.scale(freemodeForward * dt * 4.0));
         }
       }
 
-      // mantém a segunda câmera em sincronia (VR mode)
-      syncRightCamFromLeft();
+      // mantém olhos sincronizados (quando VR ativo)
+      syncEyesFromHead();
 
       scene.render();
     });
@@ -581,6 +768,7 @@
     window.addEventListener('resize', () => {
       engine.resize();
       engine.setHardwareScalingLevel(isMobile ? 1.25 : 1.0);
+      applyVRViewports();
     });
 
     // HUD: orientação
@@ -707,6 +895,7 @@
       gameState = 'freecam';
       swapToFreeCamera();
       if (!isMobile) canvas.requestPointerLock?.();
+      vrPanel.classList.remove('visible'); // painel escondido no freecam
       setTimeout(() => engine.resize(), 0);
     }, { passive:true });
 
@@ -718,6 +907,7 @@
       gameState = "freemode";
       // usa a câmera "de cabeça" (gyro no mobile, mouse no desktop)
       if (isMobile) { enableGyroAuto(); } else { swapToDeviceOrientationCamera(); }
+      vrPanel.classList.add('visible'); // mostra painel de VR
       setTimeout(() => engine.resize(), 0);
     }, { passive:true });
 
@@ -727,6 +917,47 @@
       if (vrMode) enableVRMode(); else disableVRMode();
       setTimeout(() => engine.resize(), 0);
     }, { passive:true });
+
+    // ====== Ligações do painel VR ======
+    function refreshLabels(){
+      vrSizeVal.textContent = Math.round(vrSize*100) + "%";
+      vrSepVal.textContent  = (vrSep*100).toFixed(1).replace('.0','') + "%";
+      vrIPDVal.textContent  = Math.round(ipdMeters*1000) + "mm";
+      vrK1Val.textContent   = k1.toFixed(2);
+      vrK2Val.textContent   = k2.toFixed(2);
+    }
+    refreshLabels();
+
+    rngSize.addEventListener('input', e=>{
+      vrSize = (+e.target.value)/100;
+      refreshLabels(); applyVRViewports();
+    });
+    rngSep.addEventListener('input', e=>{
+      vrSep = (+e.target.value)/100;
+      refreshLabels(); applyVRViewports();
+    });
+    rngIPD.addEventListener('input', e=>{
+      ipdMeters = (+e.target.value)/1000;
+      refreshLabels();
+    });
+    chkDist.addEventListener('change', e=>{
+      distEnable = !!e.target.checked;
+      if (vrMode){
+        if (distEnable){
+          if (!barrelPPLeft)  barrelPPLeft  = buildBarrelPP(leftEye);
+          if (!barrelPRight)  barrelPRight  = buildBarrelPP(rightEye);
+        } else {
+          if (barrelPPLeft){ barrelPPLeft.dispose(); barrelPPLeft=null; }
+          if (barrelPRight){ barrelPRight.dispose(); barrelPRight=null; }
+        }
+      }
+    });
+    rngK1.addEventListener('input', e=>{
+      k1 = +e.target.value; vrK1Val.textContent = k1.toFixed(2);
+    });
+    rngK2.addEventListener('input', e=>{
+      k2 = +e.target.value; vrK2Val.textContent = k2.toFixed(2);
+    });
 
   })();
   </script>

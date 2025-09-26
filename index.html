@@ -692,14 +692,25 @@
       plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
       const dt = new BABYLON.DynamicTexture('countDT', {width:512, height:512}, scene, true);
       const mat = new BABYLON.StandardMaterial('countMat', scene);
-      mat.diffuseTexture = dt; mat.emissiveColor = new BABYLON.Color3(0.92,0.96,1.0); mat.specularColor = new BABYLON.Color3(0,0,0); mat.backFaceCulling = false;
+      mat.diffuseTexture = dt;
+      mat.emissiveTexture = dt;           // usa o próprio texture como emissivo
+      mat.opacityTexture = dt;            // ⭐ deixa o fundo transparente
+      mat.specularColor = new BABYLON.Color3(0,0,0);
+      mat.backFaceCulling = false;
       plane.material = mat;
+      
       const draw = (n)=>{
-        const ctx = dt.getContext(); const s = dt.getSize();
+        const ctx = dt.getContext(); 
+        const s = dt.getSize();
         ctx.clearRect(0,0,s.width,s.height);
-        ctx.fillStyle = '#e6ebf5'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      
+        // quase branco, mas levemente cinza (#cccccc por ex.)
+        ctx.fillStyle = '#cccccc'; 
+        ctx.textAlign='center'; 
+        ctx.textBaseline='middle';
         ctx.font = 'bold 340px system-ui,Segoe UI,Arial';
         ctx.fillText(String(n), s.width/2, s.height/2);
+      
         dt.update();
       };
       let n = 3; draw(n);
@@ -771,6 +782,7 @@
   </script>
 </body>
 </html>
+
 
 
 

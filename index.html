@@ -58,6 +58,13 @@
         radial-gradient(700px 500px at 50% 18%, rgba(11,42,107,.22), rgba(0,0,0,0) 60%);
     }
 
+    /* ===== Finish Fade ===== */
+    #finishFade{
+      position:fixed; inset:0; background:rgba(0,0,0,0);
+      pointer-events:none; z-index:5; transition: background 900ms ease;
+    }
+    #finishFade.show{ background:rgba(0,0,0,.8); }
+
     /* ===== Régua de Equilíbrio ===== */
     .meter { width:120px; height:10px; border-radius:12px; background:rgba(0,0,0,.35);
       border:1px solid rgba(255,255,255,.08); position:relative; overflow:hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.5); }
@@ -117,6 +124,9 @@
       <button id="restart" class="btn" aria-label="Reiniciar">Reiniciar</button>
     </div>
   </div>
+
+  <!-- FINISH FADE (entre Game Over e HUD) -->
+  <div id="finishFade"></div>
 
   <!-- HUD -->
   <div class="hud" id="hud" aria-hidden="true">
@@ -216,6 +226,7 @@
     cube.material = crateMat;
     cube.isPickable = false;
     cube.freezeWorldMatrix();
+    cube.isVisible = false; // invisível, mas mantido para referência
 
     // Viga
     const beamY = -0.7;
@@ -413,6 +424,7 @@
     // ===== Estados / inputs =====
     let gameState = 'menu';
     let angle = 0, omega = 0;
+    let hasFinished = false; // marca se já finalizou para não repetir
     const K_GRAV = 1.6, K_DAMP = 1.1, K_INPUT = 2.5, K_RESIST = 0.7;
     const MAX_ROLL_FOR_INPUT = 0.6;
     const FALL_LIMIT = 0.9;
@@ -586,10 +598,16 @@
 
         const toCube = cube.position.subtract(rig.position);
         const dist = toCube.length();
-        if (dist > 1.6){
+        
+        if (!hasFinished && dist <= 1.4){
+          // chegou ao fim
+          triggerFinish();
+        } else if (dist > 1.6){
+          // ainda longe: continua avançando
           toCube.normalize();
           rig.position.addInPlace(toCube.scale(SPEED * dt));
         }
+
       } else if (gameState === 'freecam'){
         const fc = camera;
         if (fc){
@@ -604,7 +622,14 @@
           const dir = cameraForwardXZ();
           rig.position.addInPlace(dir.scale(freemodeForward * dt * 4.0));
         }
-      }
+      } else if (gameState === 'finished'){
+        // amortecimento para voltar o rig ao equilíbrio (parar de “desequilibrar”)
+        const kP = 6.0, kD = 3.0;         // ganho proporcional e derivativo
+        const acc = -kP * angle - kD * omega;
+        omega += acc * dt;
+        angle += omega * dt;
+        rig.rotation.z = angle;
+      } // <<< chave que faltava para fechar o 'finished'
 
       // mantém a segunda câmera em sincronia (VR mode)
       syncRightCamFromLeft();
@@ -685,16 +710,16 @@
     function startCountdownThenRun(){
       gameState = 'countdown';
       const plane = BABYLON.MeshBuilder.CreatePlane('countPlane', { size: 1.4 }, scene);
-      plane.parent = camera;           
-      plane.position.set(0, 0, 3);     // 3 metros na frente da câmera
-      plane.scaling.set(2, 2, 2);      // dobro do tamanho
-      plane.position = cube.position.add(new BABYLON.Vector3(0, 1.6, 0));
+      plane.parent = camera;                 // preso à câmera
+      plane.position.set(0, 0, 3);           // 3 metros à frente
+      plane.scaling.set(2, 2, 2);            // dobro do tamanho
       plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+
       const dt = new BABYLON.DynamicTexture('countDT', {width:512, height:512}, scene, true);
       const mat = new BABYLON.StandardMaterial('countMat', scene);
       mat.diffuseTexture = dt;
-      mat.emissiveTexture = dt;           // usa o próprio texture como emissivo
-      mat.opacityTexture = dt;            // ⭐ deixa o fundo transparente
+      mat.emissiveTexture = dt;              // emissivo = o próprio texto
+      mat.opacityTexture = dt;               // fundo transparente
       mat.specularColor = new BABYLON.Color3(0,0,0);
       mat.backFaceCulling = false;
       plane.material = mat;
@@ -703,19 +728,23 @@
         const ctx = dt.getContext(); 
         const s = dt.getSize();
         ctx.clearRect(0,0,s.width,s.height);
-      
-        // quase branco, mas levemente cinza (#cccccc por ex.)
-        ctx.fillStyle = '#cccccc'; 
+        ctx.fillStyle = '#cccccc';           // quase branco (cinza claro)
         ctx.textAlign='center'; 
         ctx.textBaseline='middle';
         ctx.font = 'bold 340px system-ui,Segoe UI,Arial';
         ctx.fillText(String(n), s.width/2, s.height/2);
-      
         dt.update();
       };
       let n = 3; draw(n);
       const id = setInterval(()=>{
-        n--; if (n>0){ draw(n); } else { clearInterval(id); plane.dispose(); gameState='running'; }
+        n--; 
+        if (n>0){ 
+          draw(n); 
+        } else { 
+          clearInterval(id); 
+          plane.dispose(); 
+          gameState='running'; 
+        }
       }, 1000);
     }
 
@@ -725,7 +754,52 @@
       gameover.classList.remove('hide');
     }
 
+    function spawnFinishText(){
+      // plano 3D com texto transparente, "atrás" da caixa (z menor)
+      const plane = BABYLON.MeshBuilder.CreatePlane('finishText', { width: 3.2, height: 0.9 }, scene);
+      plane.position = cube.position.add(new BABYLON.Vector3(0, 1.6, -2)); // atrás da caixa
+      plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+    
+      const dt = new BABYLON.DynamicTexture('finishDT', { width: 1024, height: 256 }, scene, true);
+      const mat = new BABYLON.StandardMaterial('finishMat', scene);
+      mat.diffuseTexture = dt;
+      mat.emissiveTexture = dt;
+      mat.opacityTexture = dt;           // fundo transparente
+      mat.specularColor = new BABYLON.Color3(0,0,0);
+      mat.backFaceCulling = false;
+      plane.material = mat;
+    
+      const ctx = dt.getContext(); const s = dt.getSize();
+      ctx.clearRect(0,0,s.width,s.height);
+      ctx.fillStyle = '#d8d8d8';         // cinza claro
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = 'bold 180px system-ui,Segoe UI,Arial';
+      ctx.fillText('Você atravessou', s.width/2, s.height/2);
+      dt.update();
+    }
+    
+    function triggerFinish(){
+      if (hasFinished) return;
+      hasFinished = true;
+      gameState = 'finished';
+      omega = 0; // corta a oscilação atual
+    
+      // escurece a tela aos poucos
+      const ff = document.getElementById('finishFade');
+      ff && ff.classList.add('show');
+    
+      // texto 3D atrás da caixa
+      spawnFinishText();
+    }
+
     restart.addEventListener('click', () => {
+      // limpa estado de "fim"
+      hasFinished = false;
+      const ff = document.getElementById('finishFade');
+      ff && ff.classList.remove('show');
+      scene.getMeshByName('finishText')?.dispose();
+
       gameover.classList.add('hide');
       hud.setAttribute('aria-hidden','false');
       meter.style.display = '';
@@ -739,6 +813,12 @@
     });
 
     play.addEventListener('click', async () => {
+      // limpa estado de "fim" também ao iniciar uma nova sessão
+      hasFinished = false;
+      const ff = document.getElementById('finishFade');
+      ff && ff.classList.remove('show');
+      scene.getMeshByName('finishText')?.dispose();
+
       goFullscreen();
       menu.classList.add('hide');
       hud.setAttribute('aria-hidden','false');
@@ -782,9 +862,3 @@
   </script>
 </body>
 </html>
-
-
-
-
-
-

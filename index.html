@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#000000" />
   <title>FPS 3D — Protótipo (Menu + HUD + Gyro + Corda + Balance)</title>
+
+  <!-- Fontes medievais (para DynamicTexture) -->
+  <link href="https://fonts.googleapis.com/css2?family=UnifrakturMaguntia&family=MedievalSharp&family=Cinzel+Decorative:wght@700;900&display=swap" rel="stylesheet">
+
   <style>
     :root{ --navy:#0b2a6b; --navy2:#001021; --fg:#e6ebf5; }
     html,body{ height:100%; margin:0; background:#000; color:var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
@@ -175,6 +179,13 @@
 
     let LAVA_Y = null;
 
+    // === URLs da mesma textura da lava ===
+    const LAVA_TEX_URL   = "https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/lavatile.jpg";
+    const LAVA_NOISE_URL = "https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/cloud.png";
+
+    // lista para animar texturas dos textos de lava
+    const lavaTextAnim = [];
+
     const engine = new BABYLON.Engine(canvas, true, { stencil:false });
     engine.setHardwareScalingLevel(isMobile ? 1.25 : 1.0);
 
@@ -308,8 +319,8 @@
         LAVA_Y = lava.position.y;
 
         const lavaMat = new BABYLON.LavaMaterial("lavaMat", scene);
-        lavaMat.noiseTexture  = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/cloud.png", scene);
-        lavaMat.diffuseTexture = new BABYLON.Texture("https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lava/lavatile.jpg", scene);
+        lavaMat.noiseTexture  = new BABYLON.Texture(LAVA_NOISE_URL, scene);
+        lavaMat.diffuseTexture = new BABYLON.Texture(LAVA_TEX_URL, scene);
         lavaMat.speed = 0.06; lavaMat.fogColor = new BABYLON.Color3(0.85, 0.28, 0.08);
         lavaMat.diffuseTexture.uScale = lavaMat.diffuseTexture.vScale = 4;
         lavaMat.noiseTexture.uScale   = lavaMat.noiseTexture.vScale   = 4;
@@ -421,6 +432,124 @@
       makeEndBlock("endBlock",   beamEnd,    +1);
     })();
 
+    // ===== UTIL: Texto com lava (medieval) =====
+    function createLavaTextPlane(opts){
+      const {
+        name = "lavaText",
+        text = "Texto",
+        width = 4.5,
+        height = 1.2,
+        position = BABYLON.Vector3.Zero(),
+        billboard = true,
+        attachTo = null,     // parent opcional (ex: câmera)
+        zForward = 3,        // se tiver parent, deslocamento em Z
+        fontSizePx = 120,    // tamanho base do texto
+        fontWeight = 900     // peso para fontes decorativas
+      } = opts || {};
+
+      // Plano
+      const plane = BABYLON.MeshBuilder.CreatePlane(name, { width, height }, scene);
+      plane.position.copyFrom(position);
+      if (billboard) plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+      if (attachTo){
+        plane.parent = attachTo;
+        plane.position.set(0, 0, zForward);
+      }
+
+      // Máscara (alpha) do texto
+      const dt = new BABYLON.DynamicTexture(`${name}_alpha`, { width: 1024, height: 256 }, scene, true);
+      const ctx = dt.getContext();
+      const s = dt.getSize();
+
+      function drawText(str){
+        ctx.clearRect(0,0,s.width,s.height);
+        // fundo transparente e texto com leve "glow" pintado na máscara
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // sombra leve para contorno na máscara
+        ctx.shadowColor = 'rgba(0,0,0,0.45)';
+        ctx.shadowBlur = 14;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+
+        // família medieval com fallbacks
+        const fontFamily = `"UnifrakturMaguntia","Cinzel Decorative","MedievalSharp",serif`;
+        ctx.font = `${fontWeight} ${fontSizePx}px ${fontFamily}`;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(str, s.width/2, s.height/2);
+        ctx.restore();
+        dt.update();
+      }
+      drawText(text);
+
+      // Material: usa a MESMA textura base da lava e brilha (emissive)
+      const mat = new BABYLON.StandardMaterial(`${name}_mat`, scene);
+      const diffuseTex = new BABYLON.Texture(LAVA_TEX_URL, scene);
+      diffuseTex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+      diffuseTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+      diffuseTex.uScale = 2; diffuseTex.vScale = 2;
+
+      mat.diffuseTexture = diffuseTex;
+      mat.emissiveTexture = diffuseTex;               // brilho vem da própria textura
+      mat.emissiveColor   = new BABYLON.Color3(1,1,1);
+      mat.opacityTexture  = dt;                       // a máscara do texto
+      mat.backFaceCulling = false;
+      mat.alphaMode = BABYLON.Engine.ALPHA_COMBINE;
+      mat.disableLighting = true;                     // deixa o emissivo dominar
+      mat.specularColor = new BABYLON.Color3(0,0,0);
+      plane.material = mat;
+
+      // partículas pequeninas saindo do texto
+      const tinyCap = 120;
+      const ps = (BABYLON.GPUParticleSystem && BABYLON.GPUParticleSystem.IsSupported)
+        ? new BABYLON.GPUParticleSystem(`${name}_embers`, { capacity: tinyCap }, scene)
+        : new BABYLON.ParticleSystem(`${name}_embers`, tinyCap, scene);
+
+      ps.particleTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
+      ps.emitter = plane;
+      // caixinha de emissão bem rente ao plano do texto
+      const w = width * 0.45, h = height * 0.35;
+      ps.minEmitBox = new BABYLON.Vector3(-w, -h, -0.02);
+      ps.maxEmitBox = new BABYLON.Vector3( w,  h,  0.02);
+
+      ps.addColorGradient(0.00, new BABYLON.Color4(1.00, 0.98, 0.92, 0.90));
+      ps.addColorGradient(0.50, new BABYLON.Color4(1.00, 0.70, 0.30, 0.45));
+      ps.addColorGradient(1.00, new BABYLON.Color4(1.00, 0.35, 0.10, 0.00));
+
+      ps.emitRate = 12;              // poucas
+      ps.minSize = 0.02; ps.maxSize = 0.06; // pequenas
+      ps.minLifeTime = 0.9; ps.maxLifeTime = 1.6;
+      ps.direction1 = new BABYLON.Vector3(-0.02, 0.8, -0.02);
+      ps.direction2 = new BABYLON.Vector3( 0.02, 1.6,  0.02);
+      ps.gravity = new BABYLON.Vector3(0, 0.0, 0);
+      ps.minEmitPower = 0.15; ps.maxEmitPower = 0.35;
+      ps.minAngularSpeed = -0.6; ps.maxAngularSpeed = 0.6;
+      ps.updateSpeed = 0.010;
+      ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+      ps.renderingGroupId = 3;
+      ps.applyFog = true;
+      ps.start();
+
+      // registra animação sutil da textura (igual espírito da lava)
+      const animObj = { tex: diffuseTex, speedU: 0.06, speedV: 0.02, disposed:false };
+      lavaTextAnim.push(animObj);
+
+      function dispose(){
+        try{
+          animObj.disposed = true;
+          plane.dispose();
+          ps.dispose();
+          diffuseTex.dispose();
+          dt.dispose();
+          mat.dispose();
+        }catch(_){}
+      }
+
+      return { plane, drawText, dispose };
+    }
+
     // ===== Estados / inputs =====
     let gameState = 'menu';
     let angle = 0, omega = 0;
@@ -431,7 +560,6 @@
     const GAME_OVER_LIMIT = 0.8;
     const SPEED = 2.0;
     const FINISH_DIST = 1.55; // distância única para parar e finalizar
-
 
     // Inputs mecânica original
     let keyTarget = 0, keyInput = 0;
@@ -612,7 +740,6 @@
           }
         }
 
-
       } else if (gameState === 'freecam'){
         const fc = camera;
         if (fc){
@@ -635,6 +762,16 @@
         angle += omega * dt;
         rig.rotation.z = angle;
       } // <<< chave que faltava para fechar o 'finished'
+
+      // anima textura dos textos-lava
+      for (let i = lavaTextAnim.length - 1; i >= 0; i--){
+        const a = lavaTextAnim[i];
+        if (!a || a.disposed) { lavaTextAnim.splice(i,1); continue; }
+        if (a.tex){
+          a.tex.uOffset += (a.speedU * dt);
+          a.tex.vOffset += (a.speedV * dt);
+        }
+      }
 
       // mantém a segunda câmera em sincronia (VR mode)
       syncRightCamFromLeft();
@@ -714,41 +851,32 @@
     // ===== UI AÇÕES =====
     function startCountdownThenRun(){
       gameState = 'countdown';
-      const plane = BABYLON.MeshBuilder.CreatePlane('countPlane', { size: 1.4 }, scene);
-      plane.parent = camera;                 // preso à câmera
-      plane.position.set(0, 0, 3);           // 3 metros à frente
-      plane.scaling.set(2, 2, 2);            // dobro do tamanho
-      plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
 
-      const dt = new BABYLON.DynamicTexture('countDT', {width:512, height:512}, scene, true);
-      const mat = new BABYLON.StandardMaterial('countMat', scene);
-      mat.diffuseTexture = dt;
-      mat.emissiveTexture = dt;              // emissivo = o próprio texto
-      mat.opacityTexture = dt;               // fundo transparente
-      mat.specularColor = new BABYLON.Color3(0,0,0);
-      mat.backFaceCulling = false;
-      plane.material = mat;
-      
-      const draw = (n)=>{
-        const ctx = dt.getContext(); 
-        const s = dt.getSize();
-        ctx.clearRect(0,0,s.width,s.height);
-        ctx.fillStyle = '#cccccc';           // quase branco (cinza claro)
-        ctx.textAlign='center'; 
-        ctx.textBaseline='middle';
-        ctx.font = 'bold 340px system-ui,Segoe UI,Arial';
-        ctx.fillText(String(n), s.width/2, s.height/2);
-        dt.update();
-      };
+      // Plano preso à câmera com texto de lava medieval
+      const { plane, drawText, dispose } = createLavaTextPlane({
+        name: 'countPlane',
+        text: '3',
+        width: 2.6,               // maior que antes pra dar presença
+        height: 1.3,
+        billboard: true,
+        attachTo: camera,
+        zForward: 3.0,
+        fontSizePx: 300,          // números grandes
+        fontWeight: 900
+      });
+      plane.scaling.set(1.8, 1.8, 1.8); // proporcional ao tamanho original
+
+      const draw = (n)=>{ drawText(String(n)); };
+
       let n = 3; draw(n);
       const id = setInterval(()=>{
-        n--; 
-        if (n>0){ 
-          draw(n); 
-        } else { 
-          clearInterval(id); 
-          plane.dispose(); 
-          gameState='running'; 
+        n--;
+        if (n>0){
+          draw(n);
+        } else {
+          clearInterval(id);
+          dispose();          // remove plano e partículas do contador
+          gameState='running';
         }
       }, 1000);
     }
@@ -760,28 +888,70 @@
     }
 
     function spawnFinishText(){
-      // plano 3D com texto transparente, "atrás" da caixa (z menor)
-      const plane = BABYLON.MeshBuilder.CreatePlane('finishText', { width: 5.0, height: 0.9 }, scene);
-      plane.position = cube.position.add(new BABYLON.Vector3(0, 1.3, -3)); // atrás da caixa
-      plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
-    
-      const dt = new BABYLON.DynamicTexture('finishDT', { width: 1024, height: 256 }, scene, true);
-      const mat = new BABYLON.StandardMaterial('finishMat', scene);
-      mat.diffuseTexture = dt;
-      mat.emissiveTexture = dt;
-      mat.opacityTexture = dt;           // fundo transparente
-      mat.specularColor = new BABYLON.Color3(0,0,0);
-      mat.backFaceCulling = false;
-      plane.material = mat;
-    
-      const ctx = dt.getContext(); const s = dt.getSize();
-      ctx.clearRect(0,0,s.width,s.height);
-      ctx.fillStyle = '#d8d8d8';         // cinza claro
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = 'bold 180px system-ui,Segoe UI,Arial';
-      ctx.fillText('Você atravessou', s.width/2, s.height/2);
-      dt.update();
+      // Texto 3D de lava (atrás da caixa) com estilo medieval
+      const obj = createLavaTextPlane({
+        name: 'finishText',
+        text: 'Você atravessou',
+        width: 4.5,
+        height: 1.2,
+        position: cube.position.add(new BABYLON.Vector3(0, 1.3, -3)),
+        billboard: true,
+        fontSizePx: 140,
+        fontWeight: 900
+      });
+      // retorna só o plano para permitir limpeza via nome já usado
+      return obj.plane;
+    }
+
+    // Pequeno efeito de lava/fogo ao finalizar (indicador visual)
+    function spawnFinishFirePulse(where){
+      const pos = where.clone().add(new BABYLON.Vector3(0, 0.8, 0));
+      const cap = 400;
+      const ps = (BABYLON.GPUParticleSystem && BABYLON.GPUParticleSystem.IsSupported)
+        ? new BABYLON.GPUParticleSystem("finishFire", { capacity: cap }, scene)
+        : new BABYLON.ParticleSystem("finishFire", cap, scene);
+
+      ps.particleTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
+      ps.emitter = pos;
+
+      ps.minEmitBox = new BABYLON.Vector3(-0.15, 0, -0.15);
+      ps.maxEmitBox = new BABYLON.Vector3( 0.15, 0.1,  0.15);
+
+      ps.addColorGradient(0.00, new BABYLON.Color4(1.00, 0.95, 0.80, 0.95));
+      ps.addColorGradient(0.30, new BABYLON.Color4(1.00, 0.70, 0.30, 0.70));
+      ps.addColorGradient(1.00, new BABYLON.Color4(1.00, 0.35, 0.10, 0.00));
+
+      ps.emitRate = 0;              // vamos usar bursts
+      ps.minSize = 0.08; ps.maxSize = 0.22;
+      ps.minLifeTime = 0.6; ps.maxLifeTime = 1.2;
+      ps.direction1 = new BABYLON.Vector3(-0.1, 2.6, -0.1);
+      ps.direction2 = new BABYLON.Vector3( 0.1, 3.4,  0.1);
+      ps.gravity = new BABYLON.Vector3(0, -0.1, 0);
+      ps.minEmitPower = 0.6; ps.maxEmitPower = 1.2;
+      ps.minAngularSpeed = -0.5; ps.maxAngularSpeed = 0.5;
+      ps.updateSpeed = 0.010;
+      ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+      ps.renderingGroupId = 3;
+      ps.applyFog = true;
+
+      // "socos" de fogo curtos
+      const burst = (count)=> {
+        for (let i=0;i<count;i++){
+          ps.manualEmitCount = 10;
+          ps.start();
+        }
+      };
+      burst(6);
+
+      // luz quente e rápida
+      const l = new BABYLON.PointLight("finishFireLight", pos, scene);
+      l.diffuse = new BABYLON.Color3(1.0, 0.45, 0.12);
+      l.specular = l.diffuse.scale(0.2);
+      l.intensity = 2.2;
+      l.range = 16;
+
+      setTimeout(()=>{ try{ ps.stop(); ps.dispose(); }catch(_){} }, 1200);
+      setTimeout(()=>{ try{ l.dispose(); }catch(_){ } }, 1400);
     }
     
     function triggerFinish(){
@@ -796,6 +966,9 @@
     
       // texto 3D atrás da caixa
       spawnFinishText();
+
+      // efeito de lava/fogo no ponto da caixa para indicar conclusão
+      spawnFinishFirePulse(cube.position);
     }
 
     restart.addEventListener('click', () => {
@@ -867,5 +1040,3 @@
   </script>
 </body>
 </html>
-
-

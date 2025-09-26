@@ -685,6 +685,9 @@
     function startCountdownThenRun(){
       gameState = 'countdown';
       const plane = BABYLON.MeshBuilder.CreatePlane('countPlane', { size: 1.4 }, scene);
+      plane.parent = camera;           
+      plane.position.set(0, 0, 3);     // 3 metros na frente da câmera
+      plane.scaling.set(2, 2, 2);      // dobro do tamanho
       plane.position = cube.position.add(new BABYLON.Vector3(0, 1.6, 0));
       plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
       const dt = new BABYLON.DynamicTexture('countDT', {width:512, height:512}, scene, true);
@@ -768,6 +771,7 @@
   </script>
 </body>
 </html>
+
 
 
 
